@@ -36,8 +36,8 @@ cdef class trie:
     def num_keys(self):
         return self.obj.num_keys()
 
-    def exactMatchSearch(self, key, start=0):
-        return self.obj.exactMatchSearch[int] (key, len(key), start)
+    #def exactMatchSearch(self, key, start=0):
+    #    return self.obj.exactMatchSearch[int] (key, len(key), start)
 
     def commonPrefixSearch(self, key, start=0):
         pass
