@@ -9,6 +9,7 @@
 #include <cstring>
 #include <climits>
 #include <cassert>
+#include <stdexcept> // std::runtime_error
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -182,7 +183,8 @@ namespace cedar {
     template <typename T>
     value_type& update (const char* key, npos_t& from, size_t& pos, size_t len, value_type val, T& cf) {
       if (! len && ! from)
-        _err (__FILE__, __LINE__, "failed to insert zero-length key\n");
+        //_err (__FILE__, __LINE__, "failed to insert zero-length key\n");
+        throw std::runtime_error("failed to insert zero-length key\n");
 #ifndef USE_FAST_LOAD
       if (! _ninfo || ! _block) restore ();
 #endif
@@ -518,7 +520,8 @@ namespace cedar {
     static void _realloc_array (T*& p, const int size_n, const int size_p = 0) {
       void* tmp = std::realloc (p, sizeof (T) * static_cast <size_t> (size_n));
       if (! tmp)
-        std::free (p), _err (__FILE__, __LINE__, "memory reallocation failed\n");
+        //std::free (p), _err (__FILE__, __LINE__, "memory reallocation failed\n");
+        throw std::runtime_error("memory reallocation failed");
       p = static_cast <T*> (tmp);
       static const T T0 = T ();
       for (T* q (p + size_p), * const r (p + size_n); q != r; ++q) *q = T0;

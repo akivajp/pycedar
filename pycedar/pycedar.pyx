@@ -3,6 +3,7 @@
 
 import sys
 
+cimport cython
 from cython.operator cimport dereference as deref
 #from cython.operator cimport reference as ref
 from libcpp.string cimport string
@@ -10,29 +11,7 @@ from libcpp.vector cimport vector
 
 from pycedar cimport da
 from pycedar cimport npos_t
-#from pycedar cimport result_triple_type
 
-#cdef bytes py3_str2bytes(str s):
-#    return bytes(s, 'utf-8')
-#cdef bytes py2_str2bytes(bytes s):
-#    # bytes == str
-#    return s
-#
-#cdef str py3_bytes2str(bytes s):
-#    return s.decode('utf-8')
-#cdef str py2_str2bytes(str s):
-#    # bytes == str
-#    return s
-#
-#cdef str2bytes
-#cdef bytes2str
-#if sys.version_info.major >= 3:
-#    str2bytes = py3_str2bytes
-#    bytes2str = py3_bytes2str
-#else:
-#    str2bytes = py2_str2bytes
-#    bytes2str = py2_bytes2str
-#
 cdef bytes to_bytes(s):
     if isinstance(s, bytes):
         return s
@@ -49,9 +28,6 @@ cdef str to_str(s):
     else:
         raise TypeError("expected str of bytes, but given: %s" % type(s).__name__)
 
-#cdef result_to_tuple(da[int].result_triple_type result):
-#    return result.value, result.length, result.id
-
 cdef class trie:
     cdef da[int] obj
 
@@ -62,22 +38,34 @@ cdef class trie:
     def __len__(self):
         return self.obj.num_keys()
 
-    cpdef capacity(self):
+    cpdef size_t capacity(self):
         return self.obj.capacity()
-    cpdef size(self):
+    cpdef size_t size(self):
         return self.obj.size()
-    cpdef length(self):
+    cpdef size_t length(self):
         return self.obj.length()
-    cpdef total_size(self):
+    cpdef size_t total_size(self):
         return self.obj.total_size()
-    cpdef unit_size(self):
+    cpdef size_t unit_size(self):
         return self.obj.unit_size()
-    cpdef nonzero_size(self):
+    cpdef size_t nonzero_size(self):
         return self.obj.nonzero_size()
-    cpdef nonzero_length(self):
+    cpdef size_t nonzero_length(self):
         return self.obj.nonzero_length()
-    cpdef num_keys(self):
+    cpdef size_t num_keys(self):
         return self.obj.num_keys()
+
+    def find(self, key, start=0):
+        cdef int value
+        cdef npos_t node_id
+        cdef size_t length
+        cdef npos_t root
+        value, root, length = self.traverse(key)
+        if value != -2:
+            value, node_id, length = self.begin(root, length)
+        while value != -2:
+            yield self.suffix(node_id,length), value, node_id, length
+            value, node_id, length = self.next(node_id, length, root)
 
     cpdef lookup(self, key, start=0):
         cdef bytes k = to_bytes(key)
@@ -101,26 +89,37 @@ cdef class trie:
         self.obj.suffix(buf, length, node_id)
         return to_str(buf)
 
-    def traverse(self, key, npos_t start=0, size_t pos=0):
+    cpdef traverse(self, key, npos_t start=0, size_t pos=0):
         cdef bytes k = to_bytes(key)
         cdef int result = self.obj.traverse(k, start, pos)
         return result, start, pos
 
-    def update(self, key, value=0):
+    cpdef update(self, key, value=0):
         cdef bytes k = to_bytes(key)
-        return self.obj.update(k, len(k), value)
+        cdef int* r
+        if not key:
+            raise KeyError("empty key is invalid")
+        if value < 0:
+            return ValueError("negative value is invalid: %s" % value)
+        r = & self.obj.update(k, len(k), value)
+        r[0] = value
+        return r[0]
 
-    cpdef save(self, filepath, mode = 'wb', bool shrink = False):
+    cpdef erase(self, key, start = 0):
+        cdef bytes k = to_bytes(key)
+        return self.obj.erase(k, len(k), start)
+
+    cpdef save(self, filepath, mode = 'wb', bool shrink = True):
         return self.obj.save(to_bytes(filepath), to_bytes(mode), shrink) 
 
-    cpdef open(self, filepath, mode = 'rb', size_t offset = 0, size_t size = 0):
+    cpdef load(self, filepath, mode = 'rb', size_t offset = 0, size_t size = 0):
         return self.obj.open(to_bytes(filepath), to_bytes(mode), offset, size)
 
-    def begin(self, npos_t start=0, size_t length=0):
+    cpdef begin(self, npos_t start=0, size_t length=0):
         cdef int result = self.obj.begin(start, length)
         return result, start, length
 
-    def next(self, npos_t start, size_t length, npos_t root=0):
+    cpdef next(self, npos_t start, size_t length, npos_t root=0):
         cdef result = self.obj.next(start, length, root)
         return result, start, length
 
