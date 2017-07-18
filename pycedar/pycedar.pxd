@@ -11,6 +11,8 @@ cdef extern from "cedarpp.h" namespace "cedar":
             npos_t     id
 
         da() except +
+        void clear (const bool reuse)
+
         size_t capacity   () const
         size_t size       () const
         size_t length     () const
