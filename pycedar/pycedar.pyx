@@ -180,7 +180,7 @@ cdef node get_node(base_trie trie, bytes key, size_t start=0):
         return None
     return node(trie, result.id, result.length)
 
-cdef int set(base_trie trie, bytes key, int value):
+cdef int set(base_trie trie, bytes key, int value) except +:
     cdef int* r
     if not key:
         raise KeyError("empty key is invalid")
@@ -193,7 +193,7 @@ cdef bytes suffix(base_trie trie, npos_t node_id, size_t length=0):
     trie.obj.suffix(buf, length, node_id)
     return buf
 
-cdef int update(base_trie trie, bytes key, int delta=0):
+cdef int update(base_trie trie, bytes key, int delta=0) except +:
     if not key:
         raise KeyError("empty key is invalid")
     return trie.obj.update(key, len(key), delta)
@@ -352,12 +352,18 @@ cdef class dict:
             yield value, node_id, length
             value, node_id, length = self.trie.next(node_id, length, root)
 
-    def find_keys(self, key, npos_t start=0):
+    def find_keys(self, key, npos_t start=0, bool force=False):
         cdef int value
         cdef npos_t node_id
         cdef size_t length
         for value, node_id, length in self.find_all(key, start):
-            yield self.trie.suffix(node_id, length)
+            try:
+                yield self.trie.suffix(node_id, length)
+            except Exception as e:
+                if force:
+                    pass
+                else:
+                    raise e
 
     def find_nodes(self, key, npos_t start=0):
         cdef int value
@@ -390,6 +396,9 @@ cdef class dict:
 
     cpdef int load(self, str filepath, str mode = 'rb', size_t offset = 0, size_t size = 0):
         return self.trie.open(filepath, mode, offset, size)
+
+    cpdef nodes(self):
+        return self.find_nodes(self.type())
 
     cpdef int save(self, str filepath, str mode = 'wb', bool shrink = True):
         return self.trie.save(filepath, mode, shrink)
