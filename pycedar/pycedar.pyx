@@ -184,7 +184,7 @@ cdef int set(base_trie trie, bytes key, int value) except +:
     cdef int* r
     if not key:
         raise KeyError("empty key is invalid")
-    r = &trie.obj.update(key, len(key), value)
+    r = <int*>&trie.obj.update(key, len(key), value)
     r[0] = value
     return r[0]
 

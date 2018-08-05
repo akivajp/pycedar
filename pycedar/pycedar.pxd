@@ -27,7 +27,7 @@ cdef extern from "cedarpp.h" namespace "cedar":
         size_t commonPrefixSearch[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) const
 
         void suffix (char* key, size_t len, npos_t to) const
-            
+
         value_type traverse (const char* key, npos_t& from_, size_t& pos) const
 
         value_type& update (const char* key, size_t len, value_type val) except +
