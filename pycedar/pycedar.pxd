@@ -24,6 +24,8 @@ cdef extern from "cedarpp.h" namespace "cedar":
 
         result_type exactMatchSearch[result_type] (const char* key, size_t len, npos_t from_) const
 
+        size_t commonPrefixPredict[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) const
+
         size_t commonPrefixSearch[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) const
 
         void suffix (char* key, size_t len, npos_t to) const

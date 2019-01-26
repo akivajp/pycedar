@@ -1,5 +1,7 @@
-build/
-dist/
-pycedar/*.cpp
-*.egg-info/
+/.idea
+/build
+/dist
+/*.egg-info
+*.cpp
+*.pyc
 

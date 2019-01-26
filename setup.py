@@ -9,22 +9,34 @@ from setuptools import Extension
 ext_modules=[
     Extension(
         'pycedar',
-        ['pycedar/pycedar.pyx'],
+        ['pycedar/pycedar.pyx', 'pycedar/pycedar.pxd'],
         include_dirs = ['./cedar/src'],
         language='c++',
-    )
+    ),
 ]
 
 setup(
     name = 'pycedar',
-    version = '0.0.4',
+    version = '0.1.1',
     cmdclass = {'build_ext': build_ext},
     ext_modules = ext_modules,
     packages = find_packages(),
+    data_files = [
+        ('cedar', ['cedar/src/cedarpp.h']),
+    ],
     description = 'Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython',
+    long_description = open('README.md').read(),
+    long_description_content_type = 'text/markdown',
     url = 'https://github.com/akivajp/pycedar',
     author = 'Akiva Miura',
     author_email = 'akiva.miura@gmail.com',
     license = 'GPLv2, GPLv2.1 and BSD',
+    classifiers = [
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Topic :: Utilities",
+    ],
 )
 

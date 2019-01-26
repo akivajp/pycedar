@@ -1,6 +1,10 @@
 # distutils: language=c++
 # -*- coding: utf-8 -*-
 
+"""
+Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython
+"""
+
 # system library
 import sys
 
@@ -56,7 +60,7 @@ else:
     bytes_to_str     = py2_bytes_to_str
     bytes_to_unicode = py2_bytes_to_unicode
 
-cpdef str to_str(object s):
+cdef str to_str(object s):
     if isinstance(s, str):
         return s
     elif isinstance(s, bytes):
@@ -67,7 +71,7 @@ cpdef str to_str(object s):
     else:
         raise TypeError("expected str, bytes or unicode, but given: %s" % type(s).__name__)
 
-cpdef bytes to_bytes(object s):
+cdef bytes to_bytes(object s):
     if isinstance(s, bytes):
         return s
     elif isinstance(s, unicode):
@@ -75,7 +79,7 @@ cpdef bytes to_bytes(object s):
     else:
         raise TypeError("expected str, bytes or unicode, but given: %s" % type(s).__name__)
 
-cpdef unicode to_unicode(object s):
+cdef unicode to_unicode(object s):
     if isinstance(s, unicode):
         return s
     elif isinstance(s, bytes):
@@ -83,44 +87,20 @@ cpdef unicode to_unicode(object s):
     else:
         raise TypeError("expected str, bytes or unicode, but given: %s" % type(s).__name__)
 
-cdef class node:
-    '''internal node information'''
-    cdef readonly npos_t id
-    cdef readonly size_t length
-    cdef base_trie trie
-
-    def __cinit__(self, base_trie trie, npos_t id, size_t length):
-        self.trie = trie
-        self.id = id
-        self.length = length
-
-    cpdef key(self):
-        return self.trie.suffix(self.id, self.length)
-
-    cpdef int value(self):
-        return self.trie.exact_match_search(self.key())
-
-    cpdef (npos_t,size_t) track(self):
-        return self.id, self.length
-
-    def __repr__(self):
-        return "pycedar.node(trie = %s, id=%s, length=%s)" % (self.trie, self.id, self.length)
-
-    def __str__(self):
-        return self.key()
 
 cdef class base_trie:
-    '''
+    """
     base trie class
     please use specialized classes below
-    '''
-
+    """
     cdef da[int] obj
+    cdef readonly root
     NO_VALUE = -1
     NO_PATH  = -2
 
     def __cinit__(self):
         self.obj
+        self.root = node(self, 0, 0)
 
     def __dealloc__(self):
         self.clear()
@@ -145,13 +125,13 @@ cdef class base_trie:
     cpdef size_t num_keys(self):
         return self.obj.num_keys()
 
-    cpdef (int,npos_t,size_t) begin(self, npos_t start=0, size_t length=0):
-        cdef int result = self.obj.begin(start, length)
-        return result, start, length
+    cpdef (int,npos_t,size_t) begin(self, npos_t from_id=0, size_t length=0):
+        cdef int result = self.obj.begin(from_id, length)
+        return result, from_id, length
 
-    cpdef (int,npos_t,size_t) next(self, npos_t start, size_t length, npos_t root=0):
-        cdef int result = self.obj.next(start, length, root)
-        return result, start, length
+    cpdef (int,npos_t,size_t) next(self, npos_t from_id, size_t length, npos_t root=0):
+        cdef int result = self.obj.next(from_id, length, root)
+        return result, from_id, length
 
     cpdef int open(self, str filepath, str mode = 'rb', size_t offset = 0, size_t size = 0):
         return self.obj.open(str_to_bytes(filepath), str_to_bytes(mode), offset, size)
@@ -161,26 +141,40 @@ cdef class base_trie:
 
 ### common functions
 
-cdef list common_prefix_search(base_trie trie, bytes key, npos_t start=0):
+cdef list common_prefix_predict(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
     cdef vector[da[int].result_triple_type] result_vector
     cdef list result_list = []
     cdef da[int].result_triple_type r
     cdef size_t ret
-    result_vector.resize(len(key))
-    ret = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, &result_vector[0], len(key), len(key), start)
+    if max_size < 0:
+        max_size = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
+    result_vector.resize(max_size)
+    ret = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
     for r in result_vector:
         if len(result_list) < ret:
             result_list.append( (trie.suffix(r.id,r.length), r.value, r.id) )
     return result_list
 
-cdef node get_node(base_trie trie, bytes key, size_t start=0):
-    cdef da[int].result_triple_type result
-    result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, len(key), start)
-    if result.value in (base_trie.NO_VALUE, base_trie.NO_PATH):
-        return None
-    return node(trie, result.id, result.length)
+cdef list common_prefix_search(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
+    cdef vector[da[int].result_triple_type] result_vector
+    cdef list result_list = []
+    cdef da[int].result_triple_type r
+    cdef size_t ret
+    if max_size < 0:
+        max_size = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
+    result_vector.resize(max_size)
+    ret = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
+    for r in result_vector:
+        if len(result_list) < ret:
+            result_list.append( (trie.suffix(r.id,r.length), r.value, r.id) )
+    return result_list
 
-cdef int set(base_trie trie, bytes key, int value) except +:
+cdef (int, size_t, npos_t) exact_match_search(base_trie trie, bytes key, size_t from_id=0):
+    cdef da[int].result_triple_type result
+    result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, len(key), from_id)
+    return result.value, result.length, result.id
+
+cdef int set(base_trie trie, bytes key, int value) except *:
     cdef int* r
     if not key:
         raise KeyError("empty key is invalid")
@@ -193,7 +187,7 @@ cdef bytes suffix(base_trie trie, npos_t node_id, size_t length=0):
     trie.obj.suffix(buf, length, node_id)
     return buf
 
-cdef int update(base_trie trie, bytes key, int delta=0) except +:
+cdef int update(base_trie trie, bytes key, int delta=0) except *:
     if not key:
         raise KeyError("empty key is invalid")
     return trie.obj.update(key, len(key), delta)
@@ -206,27 +200,27 @@ cdef class bytes_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_search(self, bytes key, npos_t start=0):
-        return common_prefix_search(self, key, start)
+    cpdef list common_prefix_predict(self, bytes key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_predict(self, key, from_id, max_size)
 
-    cpdef int erase(self, bytes key, npos_t start=0):
-        return self.obj.erase(key, len(key), start)
+    cpdef list common_prefix_search(self, bytes key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_search(self, key, from_id, max_size)
 
-    cpdef int exact_match_search(self, bytes key, npos_t start=0):
-        return self.obj.exactMatchSearch[int] (key, len(key), start)
+    cpdef int erase(self, bytes key, npos_t from_id=0):
+        return self.obj.erase(key, len(key), from_id)
 
-    cpdef node get_node(self, bytes key, size_t start=0):
-        return get_node(self, key, start)
+    cpdef (int, size_t, npos_t) exact_match_search(self, bytes key, npos_t from_id=0):
+        return exact_match_search(self, key, from_id)
 
-    cpdef int set(self, bytes key, int value):
+    cpdef int set(self, bytes key, int value) except *:
         return set(self, key, value)
 
     cpdef bytes suffix(self, npos_t node_id, size_t length=0):
         return suffix(self, node_id, length)
 
-    cpdef (int,npos_t,size_t) traverse(self, bytes key, npos_t start=0, size_t pos=0):
-        cdef int result = self.obj.traverse(key, start, pos)
-        return result, start, pos
+    cpdef (int,npos_t,size_t) traverse(self, bytes key, npos_t from_id=0, size_t pos=0):
+        cdef int result = self.obj.traverse(key, from_id, pos)
+        return result, from_id, pos
 
     cpdef int update(self, bytes key, int delta=0):
         return update(self, key, delta)
@@ -237,30 +231,31 @@ cdef class str_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_search(self, str key, npos_t start=0):
-        return common_prefix_search(self, str_to_bytes(key), start)
+    cpdef list common_prefix_predict(self, str key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_predict(self, str_to_bytes(key), from_id, max_size)
 
-    cpdef int erase(self, str key, npos_t start=0):
+    cpdef list common_prefix_search(self, str key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_search(self, str_to_bytes(key), from_id, max_size)
+
+    cpdef int erase(self, str key, npos_t from_id=0):
         cdef bytes bkey = str_to_bytes(key)
-        return self.obj.erase(bkey, len(bkey), start)
+        return self.obj.erase(bkey, len(bkey), from_id)
 
-    cpdef int exact_match_search(self, str key, npos_t start=0):
+
+    cpdef (int, size_t, npos_t) exact_match_search(self, str key, npos_t from_id=0):
         cdef bytes bkey = str_to_bytes(key)
-        return self.obj.exactMatchSearch[int] (bkey, len(bkey), start)
+        return exact_match_search(self, bkey, from_id)
 
-    cpdef node get_node(self, str key, size_t start=0):
-        return get_node(self, str_to_bytes(key), start)
-
-    cpdef int set(self, str key, int value):
+    cpdef int set(self, str key, int value) except *:
         return set(self, str_to_bytes(key), value)
 
     cpdef str suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_str( suffix(self, node_id, length) )
 
-    cpdef (int,npos_t,size_t) traverse(self, str key, npos_t start=0, size_t pos=0):
+    cpdef (int,npos_t,size_t) traverse(self, str key, npos_t from_id=0, size_t pos=0):
         cdef bytes bkey = str_to_bytes(key)
-        cdef int result = self.obj.traverse(bkey, start, pos)
-        return result, start, pos
+        cdef int result = self.obj.traverse(bkey, from_id, pos)
+        return result, from_id, pos
 
     cpdef int update(self, str key, int delta=0):
         return update(self, str_to_bytes(key), delta)
@@ -271,46 +266,119 @@ cdef class unicode_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_search(self, unicode key, npos_t start=0):
-        return common_prefix_search(self, unicode_to_bytes(key), start)
+    cpdef list common_prefix_predict(self, unicode key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_predict(self, unicode_to_bytes(key), from_id, max_size)
 
-    cpdef int erase(self, unicode key, npos_t start=0):
+    cpdef list common_prefix_search(self, unicode key, npos_t from_id=0, int max_size=-1):
+        return common_prefix_search(self, unicode_to_bytes(key), from_id, max_size)
+
+    cpdef int erase(self, unicode key, npos_t from_id=0):
         cdef bytes bkey = unicode_to_bytes(key)
-        return self.obj.erase(bkey, len(bkey), start)
+        return self.obj.erase(bkey, len(bkey), from_id)
 
-    cpdef int exact_match_search(self, unicode key, npos_t start=0):
+    cpdef (int, size_t, npos_t) exact_match_search(self, unicode key, npos_t from_id=0):
         cdef bytes bkey = unicode_to_bytes(key)
-        return self.obj.exactMatchSearch[int] (bkey, len(bkey), start)
+        return exact_match_search(self, bkey, from_id)
 
-    cpdef node get_node(self, unicode key, size_t start=0):
-        return get_node(self, unicode_to_bytes(key), start)
-
-    cpdef int set(self, unicode key, int value):
+    cpdef int set(self, unicode key, int value) except *:
         return set(self, unicode_to_bytes(key), value)
 
     cpdef unicode suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_unicode( suffix(self, node_id, length) )
 
-    cpdef (int,npos_t,size_t) traverse(self, unicode key, npos_t start=0, size_t pos=0):
+    cpdef (int,npos_t,size_t) traverse(self, unicode key, npos_t from_id=0, size_t pos=0):
         cdef bytes bkey = unicode_to_bytes(key)
-        cdef int result = self.obj.traverse(bkey, start, pos)
-        return result, start, pos
+        cdef int result = self.obj.traverse(bkey, from_id, pos)
+        return result, from_id, pos
 
     cpdef int update(self, unicode key, int delta=0):
         return update(self, unicode_to_bytes(key), delta)
 
-### utility class
+### utility classes
+
+cdef class node:
+    """
+    internal node reprsentation
+    """
+    cdef readonly npos_t id
+    cdef readonly npos_t root
+    cdef readonly size_t length
+    cdef base_trie trie
+
+    def __cinit__(self, base_trie trie, npos_t id, size_t length, npos_t root=0):
+        self.trie = trie
+        self.id = id
+        self.length = length
+        self.root = root
+
+    cpdef key(self):
+        return self.trie.suffix(self.id, self.length)
+
+    cpdef int value(self):
+        return self.trie.exact_match_search(self.key(), self.root)[0]
+
+    #cpdef (npos_t,size_t) track(self):
+    #    return self.id, self.length
+
+    cpdef (npos_t,size_t,npos_t) track(self):
+        return self.id, self.length, self.root
+
+    def traverse(self, key):
+        cdef int value
+        cdef npos_t node_id
+        cdef size_t length
+        cdef npos_t root
+        value, root, length = self.trie.traverse(key, self.id)
+        if value is not base_trie.NO_PATH:
+            value, node_id, length = self.trie.begin(root, length)
+        while value is not base_trie.NO_PATH:
+            yield value, node_id, length
+            value, node_id, length = self.trie.next(node_id, length, root)
+
+    def find_nodes(self, key):
+        cdef int value
+        cdef npos_t node_id
+        cdef size_t length
+        for value, node_id, length in self.traverse(key):
+            yield node(self.trie, node_id, length, self.id)
+
+    cpdef node get_node(self, key):
+        cdef int value
+        cdef size_t length
+        cdef npos_t node_id
+        value, length, node_id = self.trie.exact_match_search(key, self.id)
+        if value in (base_trie.NO_PATH, base_trie.NO_VALUE):
+            return None
+        else:
+            return node(self.trie, node_id, length, self.id)
+
+    def __repr__(self):
+        return "pycedar.node(trie=%s, id=%s, length=%s, root=%s)" % (self.trie, self.id, self.length, self.root)
+
+    def __str__(self):
+        #return self.key()
+        return repr(self.key())
+
 
 cdef class dict:
-    '''python dict-like class'''
+    """
+    python dict-like class
+    """
 
-    cdef public base_trie trie
-    cdef public object type
-    cdef public object fallback_cast
+    cdef readonly base_trie trie
+    cdef readonly node root
+    cdef readonly object type
+    cdef readonly object fallback_cast
 
     def __cinit__(self, type type=str):
+        """
+        constructor
+        :param type: string type (str, bytes, unicode), default value is str
+        :return: pycedar.dict object
+        """
         if type is str:
             self.trie = str_trie()
+            self.root = node(self.trie, 0, 0)
             self.fallback_cast = to_str
         elif type is bytes:
             # should be pyton3
@@ -328,103 +396,145 @@ cdef class dict:
         self.clear()
 
     cpdef clear(self):
+        """
+        clear all the strings
+        """
         self.trie.clear()
 
-    def find(self, key, npos_t start=0):
+    def find(self, key):
+        """
+        yield all string with prefix string `key` and its value
+        :param key: prefix string
+        :return: genarator yielding tuple of (string key, int value)
+        """
         cdef int value
         cdef npos_t node_id
         cdef size_t length
-        cdef npos_t root
-        for value, node_id, length in self.find_all(key, start):
-            yield self.trie.suffix(node_id,length), value
+        for value, node_id, length in self.root.traverse(key):
+            yield self.trie.suffix(node_id, length), value
 
-    def find_all(self, key, npos_t start=0):
+    def find_keys(self, key):
+        """
+        yield all the string with prefix string `key`
+        :param key: prefix string
+        :return: genarator yielding key string
+        """
         cdef int value
         cdef npos_t node_id
         cdef size_t length
-        cdef npos_t root
-        if not isinstance(key, self.type):
-            key = self.fallback_cast(key)
-        value, root, length = self.trie.traverse(key)
-        if value != base_trie.NO_PATH:
-            value, node_id, length = self.trie.begin(root, length)
-        while value != base_trie.NO_PATH:
-            yield value, node_id, length
-            value, node_id, length = self.trie.next(node_id, length, root)
+        for value, node_id, length in self.root.traverse(key):
+            yield self.trie.suffix(node_id, length)
 
-    def find_keys(self, key, npos_t start=0, bool force=False):
+    def find_values(self, key):
+        """
+        find all the string with prefix string `key` and yield theire values
+        :param key: prefix string
+        :return: genarator yielding int value
+        """
         cdef int value
         cdef npos_t node_id
         cdef size_t length
-        for value, node_id, length in self.find_all(key, start):
-            try:
-                yield self.trie.suffix(node_id, length)
-            except Exception as e:
-                if force:
-                    pass
-                else:
-                    raise e
-
-    def find_nodes(self, key, npos_t start=0):
-        cdef int value
-        cdef npos_t node_id
-        cdef size_t length
-        for value, node_id, length in self.find_all(key, start):
-            yield node(self.trie, node_id, length)
-
-    def find_values(self, key, npos_t start=0):
-        cdef int value
-        cdef npos_t node_id
-        cdef size_t length
-        for value, root, length in self.find_all(key, start):
+        for value, node_id, length in self.root.traverse(key):
             yield value
 
     cpdef object get(self, strtype key, object default=base_trie.NO_VALUE):
-        cdef int value = self.trie.exact_match_search(key)
+        """
+        get int value associated with `key` string
+        :param key: key string
+        :param default: value returned when `key` not found (default value is pycedar.base_trie.NO_VALUE)
+        :return: if `key` string is found, return its associated int value, otherwise `default`
+        """
+        cdef int value
+        value = self.trie.exact_match_search(key)[0]
         if value in (base_trie.NO_VALUE, base_trie.NO_PATH):
             return default
         return value
 
-    cpdef node get_node(self, strtype key, size_t start=0):
-        return self.trie.get_node(key, start)
+    cpdef node get_node(self, strtype key):
+        """
+        get node object associated with `key` string
+        :param key: key string
+        :return:
+        """
+        #return self.trie.get_node(key)
+        return self.root.get_node(key)
 
     cpdef keys(self):
+        """
+        :return: generator yielding all the key strings
+        """
         return self.find_keys(self.type())
 
     cpdef items(self):
+        """
+        :return: generator yielding each tuple of (key string, int value)
+        """
         return self.find(self.type())
 
-    cpdef int load(self, str filepath, str mode = 'rb', size_t offset = 0, size_t size = 0):
-        return self.trie.open(filepath, mode, offset, size)
+    cpdef int load(self, str filepath, str mode = 'rb'):
+        """
+        load trie data from `filepath`
+        :param filepath: file path to load trie data
+        :param mode: file open mode
+        """
+        return self.trie.open(filepath, mode)
 
     cpdef nodes(self):
-        return self.find_nodes(self.type())
+        """
+        :return: generator yielding all the nodes
+        """
+        return self.root.find_nodes(self.type())
 
-    cpdef int save(self, str filepath, str mode = 'wb', bool shrink = True):
+    cpdef int save(self, str filepath, str mode = 'wb', bool shrink=True):
+        """
+        save trie data into `filepath`
+        :param filepath: file path to write trie data
+        :param mode:  file open mode
+        :param shrink: shrinking flat
+        """
         return self.trie.save(filepath, mode, shrink)
 
-    cpdef int set(self, strtype key, int value):
+    cpdef int set(self, strtype key, int value) except *:
+        """
+        set value associating with `key` string
+        :param key: key string
+        :param value: int value
+        """
         return self.trie.set(key, value)
 
-    cpdef int setdefault(self, strtype key, int value=0):
-        if not key:
-            raise KeyError("empty key is invalid")
-        cdef int result = self.trie.exact_match_search(key)
+    cpdef int setdefault(self, strtype key, int value=0) except *:
+        """
+        if `key` string is not found, set associating int value
+        :param key:  key string
+        :param value: int value
+        :return: if `key` string is not found, return new int value, otherwise existing int value
+        """
+        cdef int result
+        result = self.trie.exact_match_search(key)[0]
         if result in (base_trie.NO_VALUE, base_trie.NO_PATH):
             result = self.set(key, value)
         return result
 
     cpdef int update(self, strtype key, int delta=0):
+        """
+        register `key` string and update associating value with delta (adding to existing value)
+        :param key: key string
+        :param delta: differential int value (default is 0)
+        :return: updated int value associating with `key` string
+        """
         return self.trie.update(key, delta)
 
     cpdef values(self):
+        """
+        :return: generator yielding all the int values associating with registered keys
+        """
         return self.find_values(self.type())
 
     def __len__(self):
         return self.trie.num_keys()
 
     def __contains__(self, key):
-        if self.trie.exact_match_search(key) in (base_trie.NO_VALUE, base_trie.NO_PATH):
+        if self.trie.exact_match_search(key)[0] in (base_trie.NO_VALUE, base_trie.NO_PATH):
             return False
         return True
 
@@ -436,7 +546,8 @@ cdef class dict:
             raise KeyError(key)
 
     def __getitem__(self, key):
-        cdef int value = self.trie.exact_match_search(key)
+        cdef int value
+        value = self.trie.exact_match_search(key)[0]
         if value in (base_trie.NO_VALUE, base_trie.NO_PATH):
             raise KeyError(key)
         return value
