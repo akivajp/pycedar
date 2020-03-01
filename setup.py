@@ -32,6 +32,7 @@ setup(
     packages = find_packages(),
     data_files = [
         ('cedar', ['cedar/src/cedarpp.h']),
+        ('pycedar', ['pycedar/VERSION']),
     ],
     description = 'Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython',
     long_description = long_description,
