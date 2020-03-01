@@ -554,4 +554,3 @@ cdef class dict:
 
     def __setitem__(self, key, int value):
         self.trie.set(key, value)
-
