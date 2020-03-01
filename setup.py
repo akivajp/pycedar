@@ -13,7 +13,7 @@ ext_modules=[
     Extension(
         'pycedar',
         ['pycedar/pycedar.pyx', 'pycedar/pycedar.pxd'],
-        include_dirs = ['./cedar/src'],
+        include_dirs = ['pycedar/core/cedar/src'],
         language='c++',
     ),
 ]
@@ -24,16 +24,21 @@ version = open(version_path).read().strip()
 description_path = os.path.join(base_path, 'README.md')
 long_description = open(description_path).read()
 
+print(find_packages())
+
 setup(
     name = 'pycedar',
     version = version,
     cmdclass = {'build_ext': build_ext},
     ext_modules = ext_modules,
-    packages = find_packages(),
-    data_files = [
-        ('cedar', ['cedar/src/cedarpp.h']),
-        ('pycedar', ['pycedar/VERSION']),
-    ],
+    packages = ['pycedar'],
+    package_data = {
+        'pycedar': [
+            '*.pxd',
+            'VERSION',
+            'core/cedar/src/cedarpp.h'
+        ],
+    },
     description = 'Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
