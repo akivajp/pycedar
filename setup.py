@@ -1,56 +1,69 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 
-import os
-from Cython.Distutils import build_ext
-from setuptools import find_packages
-from setuptools import setup
+from pathlib import Path
+
+from Cython.Build import cythonize
 from setuptools import Extension
+from setuptools import setup
 
 MAIN_PACKAGE = 'pycedar'
+BASE_PATH = Path(__file__).resolve().parent
 
-ext_modules=[
+extensions = [
     Extension(
         'pycedar',
-        ['pycedar/pycedar.pyx', 'pycedar/pycedar.pxd'],
-        include_dirs = ['pycedar/core/cedar/src'],
+        ['pycedar/pycedar.pyx'],
+        include_dirs=['pycedar/core/cedar/src'],
+        extra_compile_args=['-fno-strict-overflow'],
         language='c++',
     ),
 ]
 
-base_path = os.path.dirname(__file__)
-version_path = os.path.join(base_path, MAIN_PACKAGE, 'VERSION')
-version = open(version_path).read().strip()
-description_path = os.path.join(base_path, 'README.md')
-long_description = open(description_path).read()
-
-print(find_packages())
+version = (BASE_PATH / MAIN_PACKAGE / 'VERSION').read_text(encoding='utf-8').strip()
+long_description = (BASE_PATH / 'README.md').read_text(encoding='utf-8')
 
 setup(
-    name = 'pycedar',
-    version = version,
-    cmdclass = {'build_ext': build_ext},
-    ext_modules = ext_modules,
-    packages = ['pycedar'],
-    package_data = {
+    name='pycedar',
+    version=version,
+    ext_modules=cythonize(extensions, compiler_directives={'language_level': 3}),
+    packages=['pycedar'],
+    package_data={
         'pycedar': [
+            '*.pyx',
             '*.pxd',
             'VERSION',
-            'core/cedar/src/cedarpp.h'
+            'core/cedar/AUTHORS',
+            'core/cedar/BSD',
+            'core/cedar/COPYING',
+            'core/cedar/GPL',
+            'core/cedar/LGPL',
+            'core/cedar/THANKS',
+            'core/cedar/src/cedarpp.h',
         ],
     },
-    description = 'Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython',
-    long_description = long_description,
-    long_description_content_type = 'text/markdown',
-    url = 'https://github.com/akivajp/pycedar',
-    author = 'Akiva Miura',
-    author_email = 'akiva.miura@gmail.com',
-    license = 'GPLv2, GPLv2.1 and BSD',
-    classifiers = [
-        "Programming Language :: Python",
-        "Programming Language :: Python :: 3.5",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Topic :: Utilities",
+    license_files=[
+        'pycedar/core/cedar/BSD',
+        'pycedar/core/cedar/COPYING',
+        'pycedar/core/cedar/GPL',
+        'pycedar/core/cedar/LGPL',
+    ],
+    python_requires='>=3.9',
+    description='Python binding of cedar (implementation of efficiently-updatable double-array trie) using Cython',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    url='https://github.com/akivajp/pycedar',
+    author='Akiva Miura',
+    author_email='akiva.miura@gmail.com',
+    license='GPLv2, LGPLv2.1 and BSD-2-Clause',
+    classifiers=[
+        'Programming Language :: Python :: 3 :: Only',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
+        'Operating System :: POSIX',
+        'Topic :: Utilities',
     ],
 )

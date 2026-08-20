@@ -1,0 +1,11 @@
+include README.md
+include pycedar/VERSION
+include pycedar/pycedar.pxd
+include pycedar/pycedar.pyx
+include pycedar/core/cedar/AUTHORS
+include pycedar/core/cedar/BSD
+include pycedar/core/cedar/COPYING
+include pycedar/core/cedar/GPL
+include pycedar/core/cedar/LGPL
+include pycedar/core/cedar/THANKS
+include pycedar/core/cedar/src/cedarpp.h

@@ -6,6 +6,13 @@
 
 Python binding of ``cedar`` (implementation of efficiently-updatable double-array trie) using Cython
 
+Requires Python 3.9 or newer on a POSIX-compatible 64-bit platform. The
+extension is tested with CPython 3.9 through 3.14.
+
+The native Cedar serialization format is platform-dependent and has no
+integrity checks. Only load files produced by pycedar on a compatible platform
+and obtained from a trusted source.
+
 Official URL of ``cedar``: http://www.tkl.iis.u-tokyo.ac.jp/~ynaga/cedar/
 
 ## Installation
@@ -120,6 +127,15 @@ None
 ### using more primitive data structures
 
 (TBA)
+
+### Development
+
+Install the project and run the assertion-based test suite:
+
+```shell
+$ python -m pip install . pytest
+$ pytest
+```
 
 ### todo
 

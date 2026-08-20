@@ -11,7 +11,7 @@ cdef extern from "cedarpp.h" namespace "cedar":
             npos_t     id
 
         da() except +
-        void clear (const bool reuse)
+        void clear (const bool reuse) except +
 
         size_t capacity   () const
         size_t size       () const
@@ -24,9 +24,9 @@ cdef extern from "cedarpp.h" namespace "cedar":
 
         result_type exactMatchSearch[result_type] (const char* key, size_t len, npos_t from_) const
 
-        size_t commonPrefixPredict[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) const
+        size_t commonPrefixPredict[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) except +
 
-        size_t commonPrefixSearch[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) const
+        size_t commonPrefixSearch[result_type] (const char* key, result_type* result, size_t result_len, size_t len, npos_t from_) except +
 
         void suffix (char* key, size_t len, npos_t to) const
 
@@ -34,15 +34,14 @@ cdef extern from "cedarpp.h" namespace "cedar":
 
         value_type& update (const char* key, size_t len, value_type val) except +
 
-        int erase (const char* key, size_t len, npos_t from_)
+        int erase (const char* key, size_t len, npos_t from_) except +
 
-        int save (const char* fn, const char* mode, const bool shrink)
+        int save (const char* fn, const char* mode, const bool shrink) except +
 
-        int open (const char* fn, const char* mode, const size_t offset, size_t size_)
+        int open (const char* fn, const char* mode, const size_t offset, size_t size_) except +
 
-        void restore ()
+        void restore () except +
 
-        int begin (npos_t& from_, size_t& len)
+        int begin (npos_t& from_, size_t& len) except +
 
-        int next (npos_t& from_, size_t& len, const npos_t root)
-
+        int next (npos_t& from_, size_t& len, const npos_t root) except +
