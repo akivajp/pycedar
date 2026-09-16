@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build pip pytest
+          python -m build
+      - name: Install wheel and test
+        run: |
+          python -m pip install dist/*.whl
+          pytest
+      - name: Install source distribution
+        run: |
+          python -m venv /tmp/pycedar-sdist
+          /tmp/pycedar-sdist/bin/python -m pip install dist/*.tar.gz
+          cd /tmp
+          /tmp/pycedar-sdist/bin/python -c "import pycedar; assert pycedar.dict() is not None"

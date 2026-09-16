@@ -18,7 +18,6 @@ from pycedar cimport npos_t
 ctypedef fused strtype:
     str
     bytes
-    unicode
 
 ### compatible converters (bytes <-> {str,unicode})
 
@@ -102,9 +101,6 @@ cdef class base_trie:
         self.obj
         self.root = node(self, 0, 0)
 
-    def __dealloc__(self):
-        self.clear()
-
     cpdef void clear(self, bool reuse=True):
         self.obj.clear(reuse)
 
@@ -148,6 +144,8 @@ cdef list common_prefix_predict(base_trie trie, bytes key, npos_t from_id=0, int
     cdef size_t ret
     if max_size < 0:
         max_size = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
+    if max_size == 0:
+        return result_list
     result_vector.resize(max_size)
     ret = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
     for r in result_vector:
@@ -162,6 +160,8 @@ cdef list common_prefix_search(base_trie trie, bytes key, npos_t from_id=0, int 
     cdef size_t ret
     if max_size < 0:
         max_size = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
+    if max_size == 0:
+        return result_list
     result_vector.resize(max_size)
     ret = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
     for r in result_vector:
@@ -378,7 +378,6 @@ cdef class dict:
         """
         if type is str:
             self.trie = str_trie()
-            self.root = node(self.trie, 0, 0)
             self.fallback_cast = to_str
         elif type is bytes:
             # should be pyton3
@@ -390,10 +389,8 @@ cdef class dict:
             self.fallback_cast = to_unicode
         else:
             raise TypeError("expected type as str or bytes, but given: %s" % type.__name__)
+        self.root = node(self.trie, 0, 0)
         self.type = type
-
-    def __dealloc__(self):
-        self.clear()
 
     cpdef clear(self):
         """
