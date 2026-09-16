@@ -2,13 +2,16 @@
 //  $Id: cedarpp.h 1830 2014-06-16 06:17:42Z ynaga $
 // Copyright (c) 2009-2014 Naoki Yoshinaga <ynaga@tkl.iis.u-tokyo.ac.jp>
 //
-// NOTE (pycedar): this is a vendored copy of the upstream header with two
-// local modifications:
-//   1. _err() calls are replaced with `throw std::runtime_error` so that
-//      failures can be surfaced as Python exceptions (hence <stdexcept>).
-//   2. _consult() is synced with cedar-2022-03-18
-//      ($Id: cedarpp.h 1916 2017-07-12 07:30:56Z ynaga $).
-// Apart from these, this file is functionally identical to cedar-2022-03-18.
+// NOTE (pycedar): this is a vendored copy carrying local modifications. Two of
+// the five _err() call sites throw std::runtime_error instead of calling
+// std::exit(1) (hence <stdexcept>), and _consult() is synced with upstream
+// revision 1916 (2017-07-12). Apart from that, this file is functionally
+// identical to cedar-2022-03-18 -- whose cedarpp.h is itself unchanged since
+// 2017, so there is nothing newer to pick up.
+//
+// Before editing or re-vendoring this file, read ../../README.md in this
+// repository (pycedar/core/cedar/README.md). It records what was changed, why,
+// and what must be re-applied if you ever sync with a newer upstream release.
 #ifndef CEDAR_H
 #define CEDAR_H
 

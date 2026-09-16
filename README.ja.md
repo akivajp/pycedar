@@ -314,6 +314,10 @@ cedar ネイティブの ``.dat`` 形式は、書き出したマシンのポイ�
 ``save()`` / ``load()`` / ``open()`` は例外を送出せず、成功で ``0``、失敗で
 ``-1`` を返します。必ず戻り値を確認してください。
 
+唯一、保存・読み込み中のメモリ不足だけは戻り値でも例外でも通知されません。
+同梱の cedar が stderr に出力して ``std::exit(1)`` を呼びます。詳細は
+[``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md) を参照してください。
+
 ## 開発
 
 ```shell
@@ -352,7 +356,9 @@ BSD-2-Clause）。ライセンス文書は
 ## クレジット
 
 ``cedar`` は Naoki Yoshinaga 氏によるものです。``pycedar/core/cedar/`` に同梱
-しているコピーには 2 点のローカル変更があり、その内容は
-[``cedarpp.h``](pycedar/core/cedar/src/cedarpp.h) の冒頭に記載しています。
+しているコピーにはローカル変更があります。変更内容とその理由、2022 年の上流
+tarball をあえて取り込まなかった判断の経緯、より新しい版へ同期する際に再適用
+すべき内容は
+[``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md) に記録しています。
 
 各リリースの貢献者は [CHANGELOG.md](CHANGELOG.md) を参照してください。

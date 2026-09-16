@@ -317,6 +317,11 @@ source.
 ``save()`` / ``load()`` / ``open()`` return ``0`` on success and ``-1`` on
 failure instead of raising; check the return value.
 
+Running out of memory during a save or a load is the one case that is neither
+reported nor raised: the vendored cedar prints to stderr and calls
+``std::exit(1)``. See
+[``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md).
+
 ## Development
 
 ```shell
@@ -355,7 +360,10 @@ LGPLv2.1 and BSD-2-Clause. See the license files bundled under
 ## Credits
 
 ``cedar`` is written by Naoki Yoshinaga. The copy vendored under
-``pycedar/core/cedar/`` carries two local modifications, documented at the top
-of [``cedarpp.h``](pycedar/core/cedar/src/cedarpp.h).
+``pycedar/core/cedar/`` carries local modifications.
+[``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md) records what
+was changed and why, why the 2022 upstream tarball was deliberately not
+re-vendored, and what has to be re-applied if anyone syncs with a newer
+release.
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of contributors to each release.

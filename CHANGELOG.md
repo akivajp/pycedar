@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pycedar/core/cedar/README.md`, recording what was modified in the vendored
+  copy of cedar and why, that upstream's `cedarpp.h` has been unchanged since
+  2017 despite the 2022 tarball, why that tarball was deliberately not
+  re-vendored, and the three `_err()` call sites that still call `std::exit(1)`
+  (two of which are reachable through `save()` and `load()` on out of memory).
+
 ## [0.2.0] - 2026-09-16
 
 This release restores compatibility with current Python and Cython toolchains,
