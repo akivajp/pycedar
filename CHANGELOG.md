@@ -7,22 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-16
+
 ### Added
 
 - `pycedar/core/cedar/README.md`, recording what was modified in the vendored
   copy of cedar and why, that upstream's `cedarpp.h` has been unchanged since
-  2017 despite the 2022 tarball, why that tarball was deliberately not
-  re-vendored, and the three `_err()` call sites that still call `std::exit(1)`
-  (two of which are reachable through `save()` and `load()` on out of memory).
+  2017 despite the 2022 tarball, and why that tarball was deliberately not
+  re-vendored.
+
+### Changed
+
+- Allocation failures now raise `MemoryError` instead of `RuntimeError`. The
+  vendored cedar throws `std::bad_alloc`, which Cython's `except +` maps to
+  `MemoryError`, so every allocation failure reaches Python as the same, and
+  the idiomatic, exception. `RuntimeError` is now reserved for the one
+  non-allocation case, a zero-length key reaching cedar's `update()`.
+- The vendored `cedarpp.h` adopts upstream's `clear()` layout and its
+  `STATIC_ASSERT` pragmas. Behaviour is unchanged; this removes the six
+  compiler warnings the file used to emit and reduces the delta against
+  upstream.
 
 ### Fixed
 
 - An allocation failure inside `save()` or `load()` no longer terminates the
   interpreter. The vendored cedar called `std::exit(1)` from `shrink_tail()`
   and `open()`, killing the process and discarding buffered output; both now
-  throw, which `except +` turns into a Python `RuntimeError`. `open()` resets
-  itself to a valid empty trie first, so the instance stays usable instead of
-  being handed back half-built.
+  throw. `open()` resets itself to a valid empty trie first, so the instance
+  stays usable instead of being handed back half-built.
+- `load()` no longer leaks a file descriptor every time it fails. Upstream's
+  `open()` returns `-1` from nine places without closing the file; 200 failed
+  loads leaked exactly 200 descriptors, eventually exhausting the table.
 
 ## [0.2.0] - 2026-09-16
 
@@ -116,7 +131,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/akivajp/pycedar/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/akivajp/pycedar/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/akivajp/pycedar/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/akivajp/pycedar/compare/v0.1.1...v0.1.2
