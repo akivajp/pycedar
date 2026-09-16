@@ -15,6 +15,22 @@ from libcpp.vector cimport vector
 from pycedar cimport da
 from pycedar cimport npos_t
 
+### package version
+# pycedar/VERSION is the single source of truth; setup.py reads it and bakes it
+# into the distribution metadata, which is read back here at runtime so that the
+# version never has to be maintained in two places.
+# (版情報の単一の情報源は pycedar/VERSION。実行時は配布メタデータから読み戻す)
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _get_distribution_version
+    try:
+        __version__ = _get_distribution_version('pycedar')
+    except PackageNotFoundError:
+        # Built in place without being installed. (未インストールのin-placeビルド)
+        __version__ = 'unknown'
+except ImportError:  # pragma: no cover
+    __version__ = 'unknown'
+
 ctypedef fused strtype:
     str
     bytes
