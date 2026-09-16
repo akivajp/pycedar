@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-16
+
+### Added
+
+- `benchmarks/bench.py`, which times the operations pycedar is used for so that
+  a performance change can be measured rather than assumed.
+
+### Changed
+
+- `dict.get()`, `set()`, `setdefault()`, `update()` and `get_node()` are roughly
+  twice as fast. They were declared with a fused `str`/`bytes` parameter, and
+  Cython's runtime dispatch for that cost more than the trie operation itself.
+  The parameter is now `object`, which is what `d[key]` already used; the key
+  type is still enforced by the trie underneath, so behaviour is unchanged.
+- Sentinel checks on the lookup paths compare against C constants instead of
+  building a Python tuple of Python ints on every call, which speeds up
+  `d[key]`, `key in d` and the traversals.
+
+  Measured on 20000 random keys, CPython 3.13, nanoseconds per operation:
+
+  | operation | 0.2.1 | 0.2.2 |
+  | --- | --- | --- |
+  | `d.get(key)` | 302 | 135 |
+  | `d.set(key, value)` | 242 | 108 |
+  | `d.update(key, delta)` | 235 | 112 |
+  | `d.setdefault(key)` | 290 | 129 |
+  | `d.get_node(key)` | 348 | 177 |
+  | `d[key]` | 165 | 132 |
+  | `key in d` | 133 | 123 |
+
+### Fixed
+
+- `node.traverse()` compared integers with `is`, which only worked because
+  CPython interns small integers. It now uses `!=`.
+
 ## [0.2.1] - 2026-09-16
 
 ### Added
@@ -131,7 +166,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/akivajp/pycedar/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/akivajp/pycedar/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/akivajp/pycedar/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/akivajp/pycedar/compare/v0.1.2...v0.1.3
