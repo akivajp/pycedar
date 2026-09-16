@@ -337,6 +337,19 @@ $ python setup.py build_ext --inplace
 
 ``./clean.sh`` でビルド生成物を削除できます。
 
+### ベンチマーク
+
+``benchmarks/bench.py`` が主要な操作の実行時間を計測します。変更に効果があった
+かどうかは、2 つのビルドで実行して比較してください。
+
+```shell
+$ python benchmarks/bench.py --label before
+$ python benchmarks/bench.py --label after
+```
+
+``rich`` が入っていれば表形式で、無ければプレーンテキストで出力します。
+指定できる項目は ``--help`` を参照してください。
+
 ## リリース手順
 
 バージョンは [``pycedar/VERSION``](pycedar/VERSION) の 1 箇所のみで管理します。

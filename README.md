@@ -340,6 +340,19 @@ $ python setup.py build_ext --inplace
 
 ``./clean.sh`` removes build artifacts.
 
+### Benchmarks
+
+``benchmarks/bench.py`` times the operations pycedar is used for. Run it against
+two builds to check whether a change actually paid off:
+
+```shell
+$ python benchmarks/bench.py --label before
+$ python benchmarks/bench.py --label after
+```
+
+It uses ``rich`` for the table when that is installed, and plain text
+otherwise. ``--help`` lists the knobs.
+
 ## Releasing
 
 The version lives in a single place, [``pycedar/VERSION``](pycedar/VERSION).
