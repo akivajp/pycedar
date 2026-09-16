@@ -155,38 +155,114 @@ cdef class base_trie:
     cpdef int save(self, str filepath, str mode = 'wb', bool shrink = True):
         return self.obj.save(str_to_bytes(filepath), str_to_bytes(mode), shrink)
 
+    ### type dependent operations (型に依存する操作)
+    # Declared here purely so that calls dispatch through the vtable. The shared
+    # helpers below and pycedar.dict only ever hold a base_trie reference, and
+    # without these declarations every call became a method lookup by name, with
+    # each C integer argument boxed into a Python int on the way in.
+    # (共通ヘルパーと pycedar.dict は base_trie 型しか持たないため、宣言が無いと
+    #  名前による動的探索になり、C整数の引数も毎回 Python int に箱詰めされていた)
+    #
+    # The key is typed as object because the three specialisations accept
+    # different key types; each one validates what it is given.
+    # (キーが object なのは特殊化ごとに受け付ける型が異なるため。検証は各実装が行う)
+
+    cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef int erase(self, object key, npos_t from_id=0):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef int set(self, object key, int value) except *:
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef object suffix(self, npos_t node_id, size_t length=0):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
+        raise NotImplementedError("use one of the specialized trie classes")
+
+    cpdef int update(self, object key, int delta=0):
+        raise NotImplementedError("use one of the specialized trie classes")
+
 ### common functions
+
+# Speculative buffer for an unbounded predict query. Both cedar entry points
+# return the total number of matches even when the buffer was too small, so one
+# call is enough whenever the results fit, and the exact size is known for the
+# single retry when they do not.
+# (predict の投機バッファ。cedar はバッファ不足でも総数を返すため、
+#  収まれば1回で済み、収まらなくても正確な大きさで1回やり直すだけでよい)
+cdef size_t _PREDICT_INITIAL_CAPACITY = 64
 
 cdef list common_prefix_predict(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
     cdef vector[da[int].result_triple_type] result_vector
     cdef list result_list = []
     cdef da[int].result_triple_type r
+    cdef size_t keylen = len(key)
+    cdef size_t capacity
     cdef size_t ret
-    if max_size < 0:
-        max_size = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
+    cdef size_t i
+
     if max_size == 0:
         return result_list
-    result_vector.resize(max_size)
-    ret = trie.obj.commonPrefixPredict[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
-    for r in result_vector:
-        if len(result_list) < ret:
-            result_list.append( (trie.suffix(r.id,r.length), r.value, r.id) )
+    if max_size > 0:
+        capacity = <size_t>max_size
+    else:
+        capacity = _PREDICT_INITIAL_CAPACITY
+
+    result_vector.resize(capacity)
+    ret = trie.obj.commonPrefixPredict[da[int].result_triple_type] (
+        key, &result_vector[0], capacity, keylen, from_id)
+    if ret > capacity:
+        if max_size > 0:
+            # The caller asked for a bounded result. (上限指定ありなので切り詰める)
+            ret = capacity
+        else:
+            # The return value is the exact size needed. (戻り値が必要な大きさそのもの)
+            result_vector.resize(ret)
+            ret = trie.obj.commonPrefixPredict[da[int].result_triple_type] (
+                key, &result_vector[0], ret, keylen, from_id)
+
+    for i in range(ret):
+        r = result_vector[i]
+        result_list.append( (trie.suffix(r.id, r.length), r.value, r.id) )
     return result_list
 
 cdef list common_prefix_search(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
     cdef vector[da[int].result_triple_type] result_vector
     cdef list result_list = []
     cdef da[int].result_triple_type r
+    cdef size_t keylen = len(key)
+    cdef size_t capacity
     cdef size_t ret
-    if max_size < 0:
-        max_size = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, NULL, 0, len(key), from_id)
-    if max_size == 0:
+    cdef size_t i
+
+    # cedar advances one position per byte of the key, so a common prefix search
+    # can never return more than len(key) results. Sizing the buffer to that
+    # removes the counting pass entirely.
+    # (キー1バイトにつき最大1件しか返らないため、数え上げの一巡が不要)
+    if max_size == 0 or keylen == 0:
         return result_list
-    result_vector.resize(max_size)
-    ret = trie.obj.commonPrefixSearch[da[int].result_triple_type] (key, &result_vector[0], max_size, len(key), from_id)
-    for r in result_vector:
-        if len(result_list) < ret:
-            result_list.append( (trie.suffix(r.id,r.length), r.value, r.id) )
+    capacity = keylen
+    if max_size > 0 and <size_t>max_size < capacity:
+        capacity = <size_t>max_size
+
+    result_vector.resize(capacity)
+    ret = trie.obj.commonPrefixSearch[da[int].result_triple_type] (
+        key, &result_vector[0], capacity, keylen, from_id)
+    if ret > capacity:
+        ret = capacity
+
+    for i in range(ret):
+        r = result_vector[i]
+        result_list.append( (trie.suffix(r.id, r.length), r.value, r.id) )
     return result_list
 
 cdef (int, size_t, npos_t) exact_match_search(base_trie trie, bytes key, size_t from_id=0):
@@ -241,29 +317,31 @@ cdef class bytes_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_predict(self, bytes key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_predict(self, key, from_id, max_size)
 
-    cpdef list common_prefix_search(self, bytes key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_search(self, key, from_id, max_size)
 
-    cpdef int erase(self, bytes key, npos_t from_id=0):
-        return self.obj.erase(key, len(key), from_id)
+    cpdef int erase(self, object key, npos_t from_id=0):
+        cdef bytes bkey = key
+        return self.obj.erase(bkey, len(bkey), from_id)
 
-    cpdef (int, size_t, npos_t) exact_match_search(self, bytes key, npos_t from_id=0):
+    cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
         return exact_match_search(self, key, from_id)
 
-    cpdef int set(self, bytes key, int value) except *:
+    cpdef int set(self, object key, int value) except *:
         return set(self, key, value)
 
-    cpdef bytes suffix(self, npos_t node_id, size_t length=0):
+    cpdef object suffix(self, npos_t node_id, size_t length=0):
         return suffix(self, node_id, length)
 
-    cpdef (int,npos_t,size_t) traverse(self, bytes key, npos_t from_id=0, size_t pos=0):
-        cdef int result = self.obj.traverse(key, from_id, pos)
+    cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
+        cdef bytes bkey = key
+        cdef int result = self.obj.traverse(bkey, from_id, pos)
         return result, from_id, pos
 
-    cpdef int update(self, bytes key, int delta=0):
+    cpdef int update(self, object key, int delta=0):
         return update(self, key, delta)
 
 cdef class str_trie(base_trie):
@@ -272,33 +350,33 @@ cdef class str_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_predict(self, str key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_predict(self, str_to_bytes(key), from_id, max_size)
 
-    cpdef list common_prefix_search(self, str key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_search(self, str_to_bytes(key), from_id, max_size)
 
-    cpdef int erase(self, str key, npos_t from_id=0):
+    cpdef int erase(self, object key, npos_t from_id=0):
         cdef bytes bkey = str_to_bytes(key)
         return self.obj.erase(bkey, len(bkey), from_id)
 
 
-    cpdef (int, size_t, npos_t) exact_match_search(self, str key, npos_t from_id=0):
+    cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
         cdef bytes bkey = str_to_bytes(key)
         return exact_match_search(self, bkey, from_id)
 
-    cpdef int set(self, str key, int value) except *:
+    cpdef int set(self, object key, int value) except *:
         return set(self, str_to_bytes(key), value)
 
-    cpdef str suffix(self, npos_t node_id, size_t length=0):
+    cpdef object suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_str( suffix(self, node_id, length) )
 
-    cpdef (int,npos_t,size_t) traverse(self, str key, npos_t from_id=0, size_t pos=0):
+    cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
         cdef bytes bkey = str_to_bytes(key)
         cdef int result = self.obj.traverse(bkey, from_id, pos)
         return result, from_id, pos
 
-    cpdef int update(self, str key, int delta=0):
+    cpdef int update(self, object key, int delta=0):
         return update(self, str_to_bytes(key), delta)
 
 cdef class unicode_trie(base_trie):
@@ -307,32 +385,32 @@ cdef class unicode_trie(base_trie):
     def __cinit__(self):
         pass
 
-    cpdef list common_prefix_predict(self, unicode key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_predict(self, unicode_to_bytes(key), from_id, max_size)
 
-    cpdef list common_prefix_search(self, unicode key, npos_t from_id=0, int max_size=-1):
+    cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
         return common_prefix_search(self, unicode_to_bytes(key), from_id, max_size)
 
-    cpdef int erase(self, unicode key, npos_t from_id=0):
+    cpdef int erase(self, object key, npos_t from_id=0):
         cdef bytes bkey = unicode_to_bytes(key)
         return self.obj.erase(bkey, len(bkey), from_id)
 
-    cpdef (int, size_t, npos_t) exact_match_search(self, unicode key, npos_t from_id=0):
+    cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
         cdef bytes bkey = unicode_to_bytes(key)
         return exact_match_search(self, bkey, from_id)
 
-    cpdef int set(self, unicode key, int value) except *:
+    cpdef int set(self, object key, int value) except *:
         return set(self, unicode_to_bytes(key), value)
 
-    cpdef unicode suffix(self, npos_t node_id, size_t length=0):
+    cpdef object suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_unicode( suffix(self, node_id, length) )
 
-    cpdef (int,npos_t,size_t) traverse(self, unicode key, npos_t from_id=0, size_t pos=0):
+    cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
         cdef bytes bkey = unicode_to_bytes(key)
         cdef int result = self.obj.traverse(bkey, from_id, pos)
         return result, from_id, pos
 
-    cpdef int update(self, unicode key, int delta=0):
+    cpdef int update(self, object key, int delta=0):
         return update(self, unicode_to_bytes(key), delta)
 
 ### utility classes

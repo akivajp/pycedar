@@ -150,6 +150,41 @@ def test_prefix_queries_honour_max_size(trie):
     assert len(trie.common_prefix_predict('app', 0, 2)) == 2
 
 
+def test_max_size_larger_than_the_result_count_is_harmless(trie):
+    """A generous bound must not pad, truncate or repeat. (過大な上限でも件数は不変)"""
+    assert trie.common_prefix_predict('app', 0, 100) == trie.common_prefix_predict('app')
+    assert trie.common_prefix_search('applet', 0, 100) == trie.common_prefix_search('applet')
+
+
+def test_predict_returns_every_match_past_the_speculative_buffer():
+    """More matches than the internal buffer holds forces the retry path.
+
+    (内部の投機バッファを超える件数で、やり直し経路が働くことを確認する)
+    """
+    obj = pycedar.str_trie()
+    count = 500                      # comfortably past the 64 entry buffer
+    for index in range(count):
+        obj.set('shared %04d' % index, index + 1)
+    obj.set('unrelated', -7)
+
+    results = obj.common_prefix_predict('shared ')
+    assert len(results) == count
+    assert sorted(value for _key, value, _id in results) == list(range(1, count + 1))
+    # The suffixes are relative to the query. (接尾辞は問い合わせからの相対)
+    assert sorted(key for key, _value, _id in results) == ['%04d' % i for i in range(count)]
+
+
+def test_prefix_queries_with_an_empty_key(trie):
+    """An empty key prefixes nothing, but predicts everything.
+
+    (空キーはどのキーの接頭辞でもないが、predict では全件が対象になる)
+    """
+    assert trie.common_prefix_search('') == []
+    assert sorted(key for key, _v, _i in trie.common_prefix_predict('')) == [
+        'apple', 'applet', 'apply', 'banana',
+    ]
+
+
 def test_prefix_queries_with_no_match_return_empty_lists(trie):
     """Regression: a zero-sized result used to index an empty vector.
 
