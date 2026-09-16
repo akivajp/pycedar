@@ -162,6 +162,33 @@ def test_key_type_is_enforced():
         raw['text key'] = 1
 
 
+@pytest.mark.parametrize('call', [
+    lambda d, key: d.get(key),
+    lambda d, key: d.set(key, 1),
+    lambda d, key: d.setdefault(key, 1),
+    lambda d, key: d.update(key, 1),
+    lambda d, key: d.get_node(key),
+])
+def test_accessors_reject_the_wrong_key_type(call):
+    """These used to be typed with a fused ``str``/``bytes`` parameter.
+
+    (これらは以前 fused 型で宣言されており、型検査を dispatch が担っていた)
+
+    The fused declaration was dropped for speed, so the check now happens in the
+    trie below; this pins that it still happens.
+    (高速化のため fused 宣言を外したので、検査が維持されていることを固定する)
+    """
+    text = pycedar.dict()
+    raw = pycedar.dict(bytes)
+
+    with pytest.raises(TypeError):
+        call(text, b'bytes key')
+    with pytest.raises(TypeError):
+        call(raw, 'text key')
+    with pytest.raises(TypeError):
+        call(text, 123)
+
+
 def test_values_must_be_c_int_sized_integers():
     trie = pycedar.dict()
 

@@ -31,9 +31,13 @@ try:
 except ImportError:  # pragma: no cover
     __version__ = 'unknown'
 
-ctypedef fused strtype:
-    str
-    bytes
+### sentinel values
+# C level mirrors of base_trie.NO_VALUE / NO_PATH. The class attributes stay as
+# the public API; these are what the hot paths compare against, so that a lookup
+# does not have to build a Python tuple of Python ints on every call.
+# (公開APIはクラス属性のまま。内部の高頻度経路はこのC定数と比較する)
+cdef int _NO_VALUE = -1
+cdef int _NO_PATH  = -2
 
 ### compatible converters (bytes <-> {str,unicode})
 
@@ -345,9 +349,9 @@ cdef class node:
         cdef size_t length
         cdef npos_t root
         value, root, length = self.trie.traverse(key, self.id)
-        if value is not base_trie.NO_PATH:
+        if value != _NO_PATH:
             value, node_id, length = self.trie.begin(root, length)
-        while value is not base_trie.NO_PATH:
+        while value != _NO_PATH:
             yield value, node_id, length
             value, node_id, length = self.trie.next(node_id, length, root)
 
@@ -363,7 +367,7 @@ cdef class node:
         cdef size_t length
         cdef npos_t node_id
         value, length, node_id = self.trie.exact_match_search(key, self.id)
-        if value in (base_trie.NO_PATH, base_trie.NO_VALUE):
+        if value == _NO_PATH or value == _NO_VALUE:
             return None
         else:
             return node(self.trie, node_id, length, self.id)
@@ -450,7 +454,7 @@ cdef class dict:
         for value, node_id, length in self.root.traverse(key):
             yield value
 
-    cpdef object get(self, strtype key, object default=base_trie.NO_VALUE):
+    cpdef object get(self, object key, object default=base_trie.NO_VALUE):
         """
         get int value associated with `key` string
         :param key: key string
@@ -459,11 +463,11 @@ cdef class dict:
         """
         cdef int value
         value = self.trie.exact_match_search(key)[0]
-        if value in (base_trie.NO_VALUE, base_trie.NO_PATH):
+        if value == _NO_VALUE or value == _NO_PATH:
             return default
         return value
 
-    cpdef node get_node(self, strtype key):
+    cpdef node get_node(self, object key):
         """
         get node object associated with `key` string
         :param key: key string
@@ -507,7 +511,7 @@ cdef class dict:
         """
         return self.trie.save(filepath, mode, shrink)
 
-    cpdef int set(self, strtype key, int value) except *:
+    cpdef int set(self, object key, int value) except *:
         """
         set value associating with `key` string
         :param key: key string
@@ -515,7 +519,7 @@ cdef class dict:
         """
         return self.trie.set(key, value)
 
-    cpdef int setdefault(self, strtype key, int value=0) except *:
+    cpdef int setdefault(self, object key, int value=0) except *:
         """
         if `key` string is not found, set associating int value
         :param key:  key string
@@ -524,11 +528,11 @@ cdef class dict:
         """
         cdef int result
         result = self.trie.exact_match_search(key)[0]
-        if result in (base_trie.NO_VALUE, base_trie.NO_PATH):
+        if result == _NO_VALUE or result == _NO_PATH:
             result = self.set(key, value)
         return result
 
-    cpdef int update(self, strtype key, int delta=0):
+    cpdef int update(self, object key, int delta=0):
         """
         register `key` string and update associating value with delta (adding to existing value)
         :param key: key string
@@ -547,7 +551,8 @@ cdef class dict:
         return self.trie.num_keys()
 
     def __contains__(self, key):
-        if self.trie.exact_match_search(key)[0] in (base_trie.NO_VALUE, base_trie.NO_PATH):
+        cdef int value = self.trie.exact_match_search(key)[0]
+        if value == _NO_VALUE or value == _NO_PATH:
             return False
         return True
 
@@ -561,7 +566,7 @@ cdef class dict:
     def __getitem__(self, key):
         cdef int value
         value = self.trie.exact_match_search(key)[0]
-        if value in (base_trie.NO_VALUE, base_trie.NO_PATH):
+        if value == _NO_VALUE or value == _NO_PATH:
             raise KeyError(key)
         return value
 
