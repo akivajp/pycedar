@@ -1,4 +1,6 @@
 include README.md
+include README.ja.md
+include CHANGELOG.md
 include pycedar/VERSION
 include pycedar/pycedar.pxd
 include pycedar/pycedar.pyx
@@ -9,3 +11,4 @@ include pycedar/core/cedar/GPL
 include pycedar/core/cedar/LGPL
 include pycedar/core/cedar/THANKS
 include pycedar/core/cedar/src/cedarpp.h
+recursive-include tests *.py
