@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-16
+
+### Changed
+
+- Lookups, writes and traversals are faster, with no change in behaviour.
+
+  `base_trie` declared only the operations that do not depend on the key type.
+  Everything else — `exact_match_search()`, `suffix()`, `set()`, `update()`,
+  `traverse()`, `erase()` and the prefix queries — lived only on the
+  specialisations, while the shared helpers and `pycedar.dict` hold a
+  `base_trie` reference. Every one of those calls was therefore a Python method
+  lookup by name, with each C integer argument boxed into a Python `int` on the
+  way in. They are now declared on `base_trie`, so the calls dispatch through
+  the vtable instead. The key parameter is typed as `object` because the three
+  specialisations accept different types; each one still validates what it is
+  given.
+- `common_prefix_search()` no longer walks the trie twice. cedar advances one
+  position per byte of the key, so the result can never exceed `len(key)`;
+  sizing the buffer to that removes the counting pass entirely.
+  `common_prefix_predict()` has no such bound, so it starts from a speculative
+  buffer and retries once, at the exact size cedar reports, only when the
+  results do not fit.
+
+  Measured on 20000 random keys, CPython 3.13, nanoseconds per operation:
+
+  | operation | 0.3.0 | 0.3.1 |
+  | --- | --- | --- |
+  | `key in d` | 98 | 52 |
+  | `d[key]` | 107 | 61 |
+  | `d.get(key)` | 114 | 67 |
+  | `d.setdefault(key)` | 103 | 67 |
+  | `d.get_node(key)` | 145 | 99 |
+  | `d[key] = value` | 78 | 61 |
+  | `d.set(key, value)` | 85 | 70 |
+  | `d.update(key, delta)` | 90 | 75 |
+  | `common_prefix_predict()` | 3568 | 2572 |
+  | `list(d.items())` per key | 188 | 163 |
+
+  `exact_match_search()` called directly on a specialisation stayed at 82 ns,
+  as it should: that call was never the dynamic one.
+
 ## [0.3.0] - 2026-09-16
 
 ### Changed
@@ -188,7 +229,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/akivajp/pycedar/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/akivajp/pycedar/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/akivajp/pycedar/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/akivajp/pycedar/compare/v0.2.0...v0.2.1
