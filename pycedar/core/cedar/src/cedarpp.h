@@ -2,9 +2,10 @@
 //  $Id: cedarpp.h 1830 2014-06-16 06:17:42Z ynaga $
 // Copyright (c) 2009-2014 Naoki Yoshinaga <ynaga@tkl.iis.u-tokyo.ac.jp>
 //
-// NOTE (pycedar): this is a vendored copy carrying local modifications. Two of
+// NOTE (pycedar): this is a vendored copy carrying local modifications. Four of
 // the five _err() call sites throw std::runtime_error instead of calling
-// std::exit(1) (hence <stdexcept>), and _consult() is synced with upstream
+// std::exit(1) (hence <stdexcept>); the fifth is in dump(), which pycedar never
+// reaches. _consult() is synced with upstream
 // revision 1916 (2017-07-12). Apart from that, this file is functionally
 // identical to cedar-2022-03-18 -- whose cedarpp.h is itself unchanged since
 // 2017, so there is nothing newer to pick up.
@@ -334,7 +335,10 @@ namespace cedar {
         = static_cast <size_t> (*_length)
         - static_cast <size_t> (*_length0) * (1 + sizeof (value_type));
       t.tail = static_cast <char*> (std::malloc (length_));
-      if (! t.tail) _err (__FILE__, __LINE__, "memory allocation failed\n");
+      if (! t.tail)
+        // pycedar: nothing has been mutated yet, so the trie survives intact.
+        //_err (__FILE__, __LINE__, "memory allocation failed\n");
+        throw std::runtime_error("memory allocation failed\n");
       *t.length = static_cast <int> (sizeof (int));
       for (int to = 0; to < _size; ++to) {
         node& n = _array[to];
@@ -409,7 +413,14 @@ namespace cedar {
 #else
       if (! _array || ! _tail || ! _tail0)
 #endif
-        _err (__FILE__, __LINE__, "memory allocation failed\n");
+        //_err (__FILE__, __LINE__, "memory allocation failed\n");
+        { // pycedar: clear (false) above already dropped the previous contents,
+          // so reset to a valid empty trie before reporting the failure;
+          // otherwise the caller would be handed a half-built object.
+          std::fclose (fp);
+          clear (true);
+          throw std::runtime_error("memory allocation failed\n");
+        }
       if (std::fseek (fp, static_cast <long> (offset), SEEK_SET) != 0) return -1;
       if (length_ != std::fread (_tail,  sizeof (char), length_, fp) ||
           size_   != std::fread (_array, sizeof (node), size_,   fp))

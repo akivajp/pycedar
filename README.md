@@ -317,9 +317,10 @@ source.
 ``save()`` / ``load()`` / ``open()`` return ``0`` on success and ``-1`` on
 failure instead of raising; check the return value.
 
-Running out of memory during a save or a load is the one case that is neither
-reported nor raised: the vendored cedar prints to stderr and calls
-``std::exit(1)``. See
+Running out of memory is the exception to that rule: ``save()`` and ``load()``
+raise ``RuntimeError`` rather than returning ``-1``. A failed ``load()`` leaves
+the trie **empty**, because the previous contents are released before the new
+ones are allocated. The instance stays valid and can be reused. See
 [``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md).
 
 ## Development

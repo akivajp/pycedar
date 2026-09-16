@@ -204,6 +204,39 @@ def test_opening_a_missing_file_reports_failure(tmp_path):
     assert pycedar.str_trie().open(str(tmp_path / 'nope.dat')) == -1
 
 
+def test_allocation_failure_while_opening_raises_and_leaves_a_usable_trie(tmp_path):
+    """Regression: cedar used to call ``std::exit(1)`` on an allocation failure.
+
+    (回帰テスト: 確保失敗時に cedar が ``std::exit(1)`` でプロセスごと落としていた)
+
+    ``open`` sizes its arrays from the ``size`` argument when one is given, so an
+    absurd value makes the internal ``malloc`` fail without consuming memory.
+    (``size`` を与えると配列長がそこから決まるので、巨大値で確保だけを失敗させられる)
+    """
+    source = pycedar.str_trie()
+    source.set('keep', 1)
+    path = tmp_path / 'trie.dat'
+    assert source.save(str(path)) == 0
+
+    target = pycedar.str_trie()
+    target.set('discarded', 1)
+
+    with pytest.raises(RuntimeError):
+        target.open(str(path), 'rb', 0, 2 ** 60)
+
+    # The previous contents are gone, but the trie must be valid and reusable
+    # rather than half-built. (中身は失われるが、壊れた状態ではなく空の有効な状態になる)
+    assert target.num_keys() == 0
+    assert enumerate_trie(target) == []
+    target.set('after', 2)
+    assert target.exact_match_search('after')[0] == 2
+
+    # A subsequent well-formed load still works.
+    # (その後の正常な読み込みも成功する)
+    assert target.open(str(path)) == 0
+    assert target.exact_match_search('keep')[0] == 1
+
+
 ### specialised classes (特殊化クラス)
 
 def test_bytes_trie_round_trip():

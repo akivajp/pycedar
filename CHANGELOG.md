@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-vendored, and the three `_err()` call sites that still call `std::exit(1)`
   (two of which are reachable through `save()` and `load()` on out of memory).
 
+### Fixed
+
+- An allocation failure inside `save()` or `load()` no longer terminates the
+  interpreter. The vendored cedar called `std::exit(1)` from `shrink_tail()`
+  and `open()`, killing the process and discarding buffered output; both now
+  throw, which `except +` turns into a Python `RuntimeError`. `open()` resets
+  itself to a valid empty trie first, so the instance stays usable instead of
+  being handed back half-built.
+
 ## [0.2.0] - 2026-09-16
 
 This release restores compatibility with current Python and Cython toolchains,

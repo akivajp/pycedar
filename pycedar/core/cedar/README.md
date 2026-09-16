@@ -32,35 +32,50 @@ static void _err (const char* fn, const int ln, const char* msg)
 { std::fprintf (stderr, "cedar: %s [%d]: %s", fn, ln, msg); std::exit (1); }
 ```
 
-For a library loaded into a Python process that is unacceptable, so **two** of
+For a library loaded into a Python process that is unacceptable, so **four** of
 the five `_err()` call sites were converted to throw instead. The Cython
 declarations in `pycedar.pxd` carry `except +`, which turns the exception into a
 Python one.
 
 | Change | Reason |
 | --- | --- |
-| `#include <stdexcept>` | Needed by the two `throw` sites below. |
+| `#include <stdexcept>` | Needed by the `throw` sites below. |
 | `update()`: inserting a zero-length key throws `std::runtime_error` instead of calling `_err()` | Surfaces as a Python exception. `pycedar` rejects empty keys with `KeyError` before reaching this, so it is a backstop. |
 | `_realloc_array()`: a failed `realloc` throws `std::runtime_error` instead of calling `_err()` | Surfaces as a Python exception rather than killing the interpreter. |
+| `shrink_tail()`: a failed `malloc` throws `std::runtime_error` instead of calling `_err()` | Reached through `save()`, whose `shrink` argument defaults to `True`. Nothing has been mutated at that point, so the trie survives intact. |
+| `open()`: a failed `malloc` calls `fclose()`, then `clear(true)`, then throws `std::runtime_error` | Reached through `load()`. Unlike the site above, `clear(false)` has already dropped the previous contents, so the object has to be reset to a valid empty trie before the exception escapes. |
 | `_consult()` synced with upstream revision 1916 (2017-07-12) | Upstream bug fix, applied in [#2](https://github.com/akivajp/pycedar/pull/2). |
 
 The original lines are kept as comments next to the replacements, so the delta
 against upstream stays readable.
 
-### Known gap: three `_err()` call sites were left alone
+### The one `_err()` call site that is left
 
-| Function | Reachable from pycedar? |
-| --- | --- |
-| `dump()` | **No.** `pycedar.pxd` does not declare it. |
-| `shrink_tail()` — `malloc` failure | **Yes**, via `save()`, whose `shrink` argument defaults to `True`. |
-| `open()` — `malloc` failure | **Yes**, via `dict.load()` / `base_trie.open()`. |
+`dump()` still calls `_err()`, and therefore still calls `std::exit(1)`. That is
+acceptable because `pycedar.pxd` does not declare `dump()`, so it is
+unreachable from Python. Check with:
 
-So on out-of-memory during a save or a load, cedar still prints to stderr and
-calls `std::exit(1)` rather than raising. Converting those two sites the same
-way as the others would be a genuine improvement: `save` and `open` already
-carry `except +` in `pycedar.pxd`, so the exception would propagate to Python
-without any further change.
-(OOM 時に save / load がプロセスごと落ちる。この2箇所も同様に変換すれば Python 例外になる)
+```shell
+$ grep -n '_err (__FILE__' pycedar/core/cedar/src/cedarpp.h
+```
+
+Every line that comes back should either be commented out or sit inside
+`dump()`. Anything else is a path that can kill the interpreter.
+(上記以外が出てきたら、インタプリタを落としうる経路が増えたということ)
+
+### What an allocation failure looks like from Python
+
+Allocation failures surface as `RuntimeError`, because that is what
+`std::runtime_error` maps to under Cython's `except +`. `MemoryError` would be
+the more idiomatic Python exception; unifying on it would mean changing
+`_realloc_array()` too, which is a behaviour change in an existing code path and
+has not been done.
+(確保失敗は `RuntimeError` になる。`MemoryError` へ統一するには既存経路の変更が要るため未実施)
+
+`load()` is destructive: recovering from a failed load leaves an **empty** trie,
+not the previous contents. cedar frees the old arrays before allocating the new
+ones, so the old contents are already gone by the time the failure is detected.
+(読み込み失敗後のトライは空になる。cedar は新規確保より前に旧配列を解放するため)
 
 ## Upstream status, checked 2026-09-16
 
@@ -106,9 +121,10 @@ compiler warnings observed in the release build:
 1 x -Wunused-local-typedefs    (upstream suppresses it with #pragma GCC diagnostic)
 ```
 
-That was judged not to be worth a change to the core data structure on its own.
-It remains a reasonable thing to fold in alongside the `_err()` work described
-above, should anyone pick that up.
+That was judged not to be worth a change to the core data structure on its own,
+and it was deliberately left out of the `_err()` work described above so that
+the diff stayed limited to the error paths. It is still available to anyone who
+wants a warning-free build.
 
 ## If you do re-vendor
 
