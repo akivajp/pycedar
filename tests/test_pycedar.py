@@ -201,46 +201,73 @@ def test_values_must_be_c_int_sized_integers():
         trie['not an int'] = 'x'
 
 
-def test_no_value_sentinel_hides_a_key_from_lookups():
-    """``-1`` collides with ``NO_VALUE``: stored, but reported as absent.
+@pytest.mark.parametrize('reserved', [
+    pycedar.base_trie.NO_VALUE,     # -1
+    pycedar.base_trie.NO_PATH,      # -2
+])
+def test_reserved_values_are_rejected(reserved):
+    """cedar's sentinels cannot be stored, through any writer.
 
-    (``-1`` は ``NO_VALUE`` と衝突し、格納はされるが検索 API からは見えない)
+    (cedar の番兵値はどの書き込み経路からも格納できない)
+
+    Before 0.3.0 they were accepted and silently corrupted the trie: ``-1``
+    made a key invisible to every lookup while leaving it visible to
+    iteration, and ``-2`` ended traversal early, hiding every key after it.
+    (0.3.0 以前は受け付けてしまい、-1 は検索から不可視、-2 は走査を打ち切っていた)
     """
     trie = pycedar.dict()
-    trie['hidden'] = pycedar.base_trie.NO_VALUE       # -1
-    trie['ordinary'] = -3
 
-    assert 'hidden' not in trie
-    assert trie.get('hidden', None) is None
-    with pytest.raises(KeyError):
-        _ = trie['hidden']
+    for write in (lambda: trie.__setitem__('key', reserved),
+                  lambda: trie.set('key', reserved),
+                  lambda: trie.setdefault('key', reserved)):
+        with pytest.raises(ValueError):
+            write()
 
-    # Iteration still yields it, so the two views disagree.
-    # (走査では現れるため、検索と走査で結果が食い違う)
-    assert dict(trie.items())['hidden'] == -1
-
-    # Any other negative value round trips normally.
-    # (それ以外の負値は通常どおり往復する)
-    assert 'ordinary' in trie
-    assert trie['ordinary'] == -3
+    # Nothing was stored by the rejected writes. (拒否された書き込みは何も残さない)
+    assert 'key' not in trie
+    assert len(trie) == 0
 
 
-def test_no_path_sentinel_truncates_iteration():
-    """``-2`` collides with ``NO_PATH`` and ends every traversal early.
+def test_update_rejects_a_delta_that_lands_on_a_reserved_value():
+    """The result is what matters, not the delta.
 
-    (``-2`` は ``NO_PATH`` と衝突し、そこで走査が打ち切られる)
+    (判定対象はデルタではなく加算結果)
     """
     trie = pycedar.dict()
-    trie['a'] = 5
-    trie['b'] = pycedar.base_trie.NO_PATH             # -2
-    trie['c'] = 7
+    trie['counter'] = 1
 
-    # len() counts it, but iteration stops at the offending key.
-    # (len() には数えられるが、走査は該当キーで停止する)
-    assert len(trie) == 3
-    assert list(trie.items()) == [('a', 5)]
-    assert trie['a'] == 5
-    assert trie['c'] == 7
+    with pytest.raises(ValueError):
+        trie.update('counter', -3)          # 1 + (-3) == -2
+
+    # The delta is rolled back, so the value is untouched.
+    # (デルタは巻き戻され、値は元のまま)
+    assert trie['counter'] == 1
+
+    # Any result that is not reserved goes through.
+    # (予約値でない結果なら通る)
+    assert trie.update('counter', -4) == -3
+
+
+def test_other_values_including_negatives_round_trip():
+    trie = pycedar.dict()
+    values = (-2 ** 31, -3, 0, 1, 2 ** 31 - 1)
+    for index, value in enumerate(values):
+        trie['key %d' % index] = value
+
+    # Rejecting the sentinels is what makes these two agree for every input.
+    # (番兵値を拒否するからこそ len() と走査結果が常に一致する)
+    assert len(trie) == len(values)
+    assert len(list(trie.items())) == len(values)
+    assert sorted(trie.values()) == sorted(values)
+
+
+def test_the_not_found_marker_can_no_longer_collide_with_a_stored_value():
+    """``get`` returning ``NO_VALUE`` is now unambiguous. (戻り値が一意に定まる)"""
+    trie = pycedar.dict()
+    trie['present'] = 5
+    assert trie.get('absent') == pycedar.base_trie.NO_VALUE
+    with pytest.raises(ValueError):
+        trie['impostor'] = pycedar.base_trie.NO_VALUE
 
 
 def test_zero_is_a_valid_value():

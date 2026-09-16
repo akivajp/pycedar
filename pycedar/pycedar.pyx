@@ -194,10 +194,20 @@ cdef (int, size_t, npos_t) exact_match_search(base_trie trie, bytes key, size_t 
     result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, len(key), from_id)
     return result.value, result.length, result.id
 
+cdef str reserved_value_message(int value):
+    # (予約値を格納しようとしたときのメッセージ)
+    return (
+        "%d is reserved and cannot be stored: %d is base_trie.NO_VALUE and "
+        "%d is base_trie.NO_PATH, which cedar uses to mean 'no value here' and "
+        "'end of traversal'" % (value, _NO_VALUE, _NO_PATH)
+    )
+
 cdef int set(base_trie trie, bytes key, int value) except *:
     cdef int* r
     if not key:
         raise KeyError("empty key is invalid")
+    if value == _NO_VALUE or value == _NO_PATH:
+        raise ValueError(reserved_value_message(value))
     r = <int*>&trie.obj.update(key, len(key), value)
     r[0] = value
     return r[0]
@@ -208,9 +218,20 @@ cdef bytes suffix(base_trie trie, npos_t node_id, size_t length=0):
     return buf
 
 cdef int update(base_trie trie, bytes key, int delta=0) except *:
+    cdef int result
     if not key:
         raise KeyError("empty key is invalid")
-    return trie.obj.update(key, len(key), delta)
+    # The result is what matters here, not the delta: a legal delta can still
+    # land on a reserved value. Checking afterwards costs one comparison,
+    # whereas checking beforehand would cost a second lookup.
+    # (問題になるのは加算結果。事前検査では余分なルックアップが要る)
+    result = trie.obj.update(key, len(key), delta)
+    if result == _NO_VALUE or result == _NO_PATH:
+        # Roll the delta back so that no reserved value is left behind.
+        # (予約値を残さないようデルタを巻き戻す)
+        trie.obj.update(key, len(key), -delta)
+        raise ValueError(reserved_value_message(result))
+    return result
 
 ### specialized trie classes
 

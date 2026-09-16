@@ -294,16 +294,38 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 Values are stored as C ``int``, so they must fit in ``-2**31 .. 2**31-1``;
 anything larger raises ``OverflowError``.
 
-Two values collide with cedar's sentinels and must not be stored:
+``-1`` and ``-2`` are cedar's sentinels — ``base_trie.NO_VALUE`` and
+``base_trie.NO_PATH`` — and every writer rejects them:
 
-* **``-1`` (``NO_VALUE``)** — the key is stored and appears during iteration,
-  but ``in``, ``get()`` and ``d[key]`` all report it as absent.
-* **``-2`` (``NO_PATH``)** — this value terminates traversal, so ``items()``,
-  ``keys()``, ``values()``, ``find()`` and friends silently stop at that key and
-  never reach the rest of the trie.
+```python
+>>> limited = pycedar.dict()
+>>> limited['key'] = -1
+Traceback (most recent call last):
+    ...
+ValueError: -1 is reserved and cannot be stored: ...
+```
 
-Storing non-negative values avoids both problems. Every other value, including
-other negative numbers, round trips normally.
+``update()`` checks the resulting value rather than the delta, because a
+perfectly ordinary delta can still land on a sentinel. When it does, the delta
+is rolled back and the stored value is left untouched:
+
+```python
+>>> limited['counter'] = 1
+>>> limited.update('counter', -3)     # 1 + (-3) == -2
+Traceback (most recent call last):
+    ...
+ValueError: -2 is reserved and cannot be stored: ...
+>>> limited['counter']
+1
+```
+
+Every other value round trips, negative ones included.
+
+Before 0.3.0 these two were accepted and silently corrupted the trie: ``-1``
+made a key invisible to ``in``, ``get()`` and ``d[key]`` while leaving it
+visible to iteration, and ``-2`` ended every traversal early, hiding each key
+that came after it. If you are upgrading and were storing either, the values
+were not being read back correctly in the first place.
 
 ### The serialization format is platform-dependent and unauthenticated
 

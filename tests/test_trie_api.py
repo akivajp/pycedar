@@ -91,6 +91,29 @@ def test_set_and_update_reject_empty_keys():
         obj.update('', 1)
 
 
+@pytest.mark.parametrize('reserved', [NO_VALUE, NO_PATH])
+def test_set_rejects_reserved_values(reserved):
+    """The raw layer enforces this too, since it shares the same writer.
+
+    (低水準層も同じ書き込み経路を通るため同様に拒否される)
+    """
+    obj = pycedar.str_trie()
+    with pytest.raises(ValueError):
+        obj.set('key', reserved)
+    assert obj.num_keys() == 0
+
+
+def test_update_rolls_back_a_reserved_result():
+    obj = pycedar.str_trie()
+    obj.set('counter', 1)
+
+    with pytest.raises(ValueError):
+        obj.update('counter', -3)           # 1 + (-3) == -2
+
+    assert obj.exact_match_search('counter')[0] == 1
+    assert enumerate_trie(obj) == [('counter', 1)]
+
+
 def test_erase_reports_whether_the_key_existed(trie):
     assert trie.erase('apply') == 0
     assert trie.exact_match_search('apply')[0] in (NO_VALUE, NO_PATH)
