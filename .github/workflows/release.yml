@@ -1,0 +1,122 @@
+name: release
+
+# Pushing a tag such as v0.2.0 builds the distributions and publishes them.
+# (v0.2.0 のようなタグを push すると配布物をビルドして公開する)
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allows a dry run that builds everything without publishing.
+  # (公開せずにビルドだけ試すための手動実行)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    name: Check the tag against pycedar/VERSION
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the tag with pycedar/VERSION
+        run: |
+          set -eu
+          version="$(cat pycedar/VERSION)"
+          echo "pycedar/VERSION: ${version}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "Not a tag build; skipping the comparison."
+            exit 0
+          fi
+          echo "tag: ${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pycedar/VERSION (${version})"
+            exit 1
+          fi
+
+  sdist:
+    name: Build the source distribution
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Build
+        run: |
+          python -m pip install --upgrade build
+          python -m build --sdist
+      - name: Verify that the sdist installs and passes the tests
+        run: |
+          set -eu
+          python -m venv "${RUNNER_TEMP}/sdist-check"
+          "${RUNNER_TEMP}/sdist-check/bin/python" -m pip install dist/*.tar.gz pytest
+          "${RUNNER_TEMP}/sdist-check/bin/python" -m pytest tests
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+
+  wheels:
+    name: Build wheels on ${{ matrix.os }}
+    needs: check-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple silicon; cibuildwheel cross-compiles the
+        # x86_64 wheels from there (see [tool.cibuildwheel.macos]).
+        # (macos-latest は arm64。x86_64 は同ランナーからクロスビルドする)
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pypa/cibuildwheel@v4.2.1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  publish:
+    name: Publish to PyPI
+    needs: [sdist, wheels]
+    # Never publish from a manual dry run. (手動実行では公開しない)
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pycedar
+    permissions:
+      # Required for Trusted Publishing. (Trusted Publishing に必要)
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: List the distributions
+        run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create the GitHub release
+    needs: publish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md) for the details of this release."
