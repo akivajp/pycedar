@@ -6,3 +6,5 @@
 /*.egg-info
 *.cpp
 *.pyc
+*.so
+/wheelhouse

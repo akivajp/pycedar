@@ -1,6 +1,14 @@
 // cedar -- C++ implementation of Efficiently-updatable Double ARray trie
 //  $Id: cedarpp.h 1830 2014-06-16 06:17:42Z ynaga $
 // Copyright (c) 2009-2014 Naoki Yoshinaga <ynaga@tkl.iis.u-tokyo.ac.jp>
+//
+// NOTE (pycedar): this is a vendored copy of the upstream header with two
+// local modifications:
+//   1. _err() calls are replaced with `throw std::runtime_error` so that
+//      failures can be surfaced as Python exceptions (hence <stdexcept>).
+//   2. _consult() is synced with cedar-2022-03-18
+//      ($Id: cedarpp.h 1916 2017-07-12 07:30:56Z ynaga $).
+// Apart from these, this file is functionally identical to cedar-2022-03-18.
 #ifndef CEDAR_H
 #define CEDAR_H
 

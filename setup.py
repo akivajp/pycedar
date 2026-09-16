@@ -5,16 +5,41 @@ from pathlib import Path
 from Cython.Build import cythonize
 from setuptools import Extension
 from setuptools import setup
+from setuptools.command.build_ext import build_ext as _build_ext
 
 MAIN_PACKAGE = 'pycedar'
 BASE_PATH = Path(__file__).resolve().parent
+
+# cedar's inner loops rely on signed integer arithmetic. If the optimizer is
+# allowed to treat signed overflow as undefined behaviour, dense insertion can
+# fail to terminate. The flag is GNU/clang specific, so it is applied only after
+# inspecting the distutils compiler type (never on MSVC).
+# (最適化器が符号付きオーバーフローをUB扱いすると密な挿入が停止しなくなる。
+#  gcc/clang 専用フラグなのでコンパイラ種別を見てから付与する)
+UNIX_EXTRA_COMPILE_ARGS = ['-fno-strict-overflow']
+
+
+class build_ext(_build_ext):
+    """Apply toolchain specific compile flags. (ツールチェイン別のフラグ出し分け)"""
+
+    def build_extensions(self):
+        if self.compiler.compiler_type == 'unix':
+            for ext in self.extensions:
+                # Append without clobbering flags set elsewhere.
+                # (他所で設定されたフラグを壊さないよう重複を避けて追記する)
+                args = list(ext.extra_compile_args or [])
+                for arg in UNIX_EXTRA_COMPILE_ARGS:
+                    if arg not in args:
+                        args.append(arg)
+                ext.extra_compile_args = args
+        super().build_extensions()
+
 
 extensions = [
     Extension(
         'pycedar',
         ['pycedar/pycedar.pyx'],
         include_dirs=['pycedar/core/cedar/src'],
-        extra_compile_args=['-fno-strict-overflow'],
         language='c++',
     ),
 ]
@@ -25,6 +50,7 @@ long_description = (BASE_PATH / 'README.md').read_text(encoding='utf-8')
 setup(
     name='pycedar',
     version=version,
+    cmdclass={'build_ext': build_ext},
     ext_modules=cythonize(extensions, compiler_directives={'language_level': 3}),
     packages=['pycedar'],
     package_data={
@@ -55,6 +81,11 @@ setup(
     author='Akiva Miura',
     author_email='akiva.miura@gmail.com',
     license='GPLv2, LGPLv2.1 and BSD-2-Clause',
+    project_urls={
+        'Source': 'https://github.com/akivajp/pycedar',
+        'Changelog': 'https://github.com/akivajp/pycedar/blob/master/CHANGELOG.md',
+        'Issue Tracker': 'https://github.com/akivajp/pycedar/issues',
+    },
     classifiers=[
         'Programming Language :: Python :: 3 :: Only',
         'Programming Language :: Python :: 3.9',
