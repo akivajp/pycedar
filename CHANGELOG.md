@@ -60,12 +60,48 @@ which had been broken since Cython 3. Most of the work in it comes from
   from this project's deliberate `_err()` → `throw std::runtime_error` patch,
   the vendored header is now functionally identical to upstream.
 
+The entries below were reconstructed from the git history and the PyPI upload
+records; the corresponding tags were added retroactively.
+
 ## [0.1.3] - 2020-03-02
 
 ### Changed
 
 - Reorganized the directory layout and the distribution settings.
 
+## [0.1.2] - 2020-03-02
+
+### Added
+
+- `pycedar/VERSION` as the single source of truth for the version number.
+
+### Changed
+
+- Declared support for Python 3.5, 3.6 and 3.7.
+
+## [0.1.1] - 2019-01-27
+
+### Added
+
+- Documentation.
+
+### Fixed
+
+- Assorted bugs.
+
+## [0.0.4] - 2018-08-06
+
+### Added
+
+- First release published on PyPI.
+
+### Fixed
+
+- Build failure with clang on macOS.
+
 [Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/akivajp/pycedar/compare/6e1bec6...v0.2.0
-[0.1.3]: https://github.com/akivajp/pycedar/commit/6e1bec6
+[0.2.0]: https://github.com/akivajp/pycedar/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/akivajp/pycedar/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/akivajp/pycedar/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/akivajp/pycedar/compare/v0.0.4...v0.1.1
+[0.0.4]: https://github.com/akivajp/pycedar/releases/tag/v0.0.4
