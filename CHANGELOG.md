@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-16
+
+### Changed
+
+- **Breaking**: storing `-1` or `-2` now raises `ValueError`. They are cedar's
+  sentinels, `base_trie.NO_VALUE` and `base_trie.NO_PATH`, and accepting them
+  silently corrupted the trie: `-1` made a key invisible to `in`, `get()` and
+  `d[key]` while leaving it visible to iteration, and `-2` terminated every
+  traversal early, hiding each key stored after it. Anyone affected was already
+  unable to read those values back, so the exception replaces silent data loss
+  rather than working behaviour.
+
+  The check lives in the writers shared by both layers, so `d[key] = value`,
+  `set()`, `setdefault()` and the trie level `set()` all enforce it.
+  `update()` validates the resulting value instead of the delta, because an
+  ordinary delta can still land on a sentinel; when it does, the delta is
+  rolled back and the stored value is left untouched. A key created by such a
+  rejected `update()` is left registered with the value `0`.
+
+  As a consequence, `get()` returning `NO_VALUE` is now unambiguous: no stored
+  value can collide with it.
+
 ## [0.2.2] - 2026-09-16
 
 ### Added
@@ -166,7 +188,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/akivajp/pycedar/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/akivajp/pycedar/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/akivajp/pycedar/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/akivajp/pycedar/compare/v0.1.3...v0.2.0
