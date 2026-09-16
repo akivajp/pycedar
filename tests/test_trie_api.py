@@ -7,6 +7,8 @@ that the primitive layer documented in the README stays covered.
 (``pycedar.dict`` はこれらのラッパーであり、README に記載した低水準層を直接検証する)
 """
 
+import os
+
 import pytest
 
 import pycedar
@@ -221,7 +223,7 @@ def test_allocation_failure_while_opening_raises_and_leaves_a_usable_trie(tmp_pa
     target = pycedar.str_trie()
     target.set('discarded', 1)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(MemoryError):
         target.open(str(path), 'rb', 0, 2 ** 60)
 
     # The previous contents are gone, but the trie must be valid and reusable
@@ -235,6 +237,40 @@ def test_allocation_failure_while_opening_raises_and_leaves_a_usable_trie(tmp_pa
     # (その後の正常な読み込みも成功する)
     assert target.open(str(path)) == 0
     assert target.exact_match_search('keep')[0] == 1
+
+
+def _open_file_descriptor_count():
+    """Descriptors held by this process, or ``None`` if it cannot be measured.
+
+    (このプロセスが保持するFD数。測れない環境では ``None``)
+    """
+    try:
+        return len(os.listdir('/proc/self/fd'))
+    except OSError:
+        return None
+
+
+def test_failed_loads_do_not_leak_file_descriptors(tmp_path):
+    """Regression: ``open`` used to return -1 without closing the file.
+
+    (回帰テスト: ``open`` が ``fclose`` せずに -1 を返し FD を漏らしていた)
+    """
+    path = tmp_path / 'garbage.dat'
+    path.write_bytes(b'this is not a cedar image')
+
+    trie = pycedar.str_trie()
+    # Warm up, so that one-off allocations are not counted as a leak.
+    # (初回限りの確保を漏れと数えないよう先に1回実行する)
+    assert trie.open(str(path)) == -1
+
+    before = _open_file_descriptor_count()
+    if before is None:
+        pytest.skip('open file descriptors cannot be counted on this platform')
+
+    for _ in range(200):
+        assert trie.open(str(path)) == -1
+
+    assert _open_file_descriptor_count() == before
 
 
 ### specialised classes (特殊化クラス)

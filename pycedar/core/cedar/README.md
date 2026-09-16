@@ -39,12 +39,14 @@ Python one.
 
 | Change | Reason |
 | --- | --- |
-| `#include <stdexcept>` | Needed by the `throw` sites below. |
+| `#include <new>`, `#include <stdexcept>` | Needed by the `throw` sites below. |
 | `update()`: inserting a zero-length key throws `std::runtime_error` instead of calling `_err()` | Surfaces as a Python exception. `pycedar` rejects empty keys with `KeyError` before reaching this, so it is a backstop. |
-| `_realloc_array()`: a failed `realloc` throws `std::runtime_error` instead of calling `_err()` | Surfaces as a Python exception rather than killing the interpreter. |
-| `shrink_tail()`: a failed `malloc` throws `std::runtime_error` instead of calling `_err()` | Reached through `save()`, whose `shrink` argument defaults to `True`. Nothing has been mutated at that point, so the trie survives intact. |
-| `open()`: a failed `malloc` calls `fclose()`, then `clear(true)`, then throws `std::runtime_error` | Reached through `load()`. Unlike the site above, `clear(false)` has already dropped the previous contents, so the object has to be reset to a valid empty trie before the exception escapes. |
+| `_realloc_array()`: a failed `realloc` throws `std::bad_alloc` instead of calling `_err()` | Surfaces as `MemoryError` rather than killing the interpreter. |
+| `shrink_tail()`: a failed `malloc` throws `std::bad_alloc` instead of calling `_err()` | Reached through `save()`, whose `shrink` argument defaults to `True`. Nothing has been mutated at that point, so the trie survives intact. |
+| `open()`: a failed `malloc` calls `fclose()`, then `clear(true)`, then throws `std::bad_alloc` | Reached through `load()`. Unlike the site above, `clear(false)` has already dropped the previous contents, so the object has to be reset to a valid empty trie before the exception escapes. |
+| `open()`: every early `return -1` closes the file first | Upstream leaks the `FILE*` on all nine of those paths. A loop of failed loads exhausts the descriptor table: 200 failed loads leaked exactly 200 descriptors before the fix. |
 | `_consult()` synced with upstream revision 1916 (2017-07-12) | Upstream bug fix, applied in [#2](https://github.com/akivajp/pycedar/pull/2). |
+| `clear()` layout and the `STATIC_ASSERT` pragmas taken from upstream | Pure formatting, adopted to remove the compiler warnings this copy used to emit. Reduces the delta against upstream rather than adding to it. |
 
 The original lines are kept as comments next to the replacements, so the delta
 against upstream stays readable.
@@ -65,12 +67,13 @@ Every line that comes back should either be commented out or sit inside
 
 ### What an allocation failure looks like from Python
 
-Allocation failures surface as `RuntimeError`, because that is what
-`std::runtime_error` maps to under Cython's `except +`. `MemoryError` would be
-the more idiomatic Python exception; unifying on it would mean changing
-`_realloc_array()` too, which is a behaviour change in an existing code path and
-has not been done.
-(確保失敗は `RuntimeError` になる。`MemoryError` へ統一するには既存経路の変更が要るため未実施)
+Every allocation failure raises `MemoryError`, because Cython's `except +` maps
+`std::bad_alloc` to it. Use `std::bad_alloc` — not `std::runtime_error` — for any
+further allocation site, so that all of them stay on one exception type.
+(確保失敗はすべて `MemoryError`。新たに確保箇所を足すときも `std::bad_alloc` を使うこと)
+
+`std::runtime_error` is reserved for the one non-allocation case, the
+zero-length key in `update()`, which reaches Python as `RuntimeError`.
 
 `load()` is destructive: recovering from a failed load leaves an **empty** trie,
 not the previous contents. cedar frees the old arrays before allocating the new
@@ -101,30 +104,21 @@ $ diff -u pycedar/core/cedar/src/cedarpp.h cedar-*/src/cedarpp.h
 
 ## Decision: the 2022 tarball was not re-vendored
 
-Once the `_consult()` fix landed, the remaining delta against upstream is only:
+Once the `_consult()` fix landed, the remaining delta against upstream is only
+the deliberate local patches listed above, plus comment wording. Everything
+else that upstream had and this copy did not — the `clear()` layout and the
+`STATIC_ASSERT` pragmas — has since been adopted, which silenced the six
+compiler warnings this copy used to emit:
 
-1. the deliberate local patches listed above,
-2. comment wording,
-3. the formatting of `clear()` (upstream splits the `_array = 0;` assignments
-   onto their own line; behaviour is identical).
+```
+5 x -Wmisleading-indentation   (from the old clear() formatting)
+1 x -Wunused-local-typedefs    (from STATIC_ASSERT)
+```
 
 There is **no functional difference left to gain**. Re-vendoring wholesale would
 mean re-applying the patches by hand, and silently losing them would convert
-recoverable errors into `std::exit(1)` — the worst possible regression for a
-library. That risk buys nothing.
-
-The only concrete benefit of syncing (2) and (3) would be silencing six
-compiler warnings observed in the release build:
-
-```
-5 x -Wmisleading-indentation   (from the clear() formatting)
-1 x -Wunused-local-typedefs    (upstream suppresses it with #pragma GCC diagnostic)
-```
-
-That was judged not to be worth a change to the core data structure on its own,
-and it was deliberately left out of the `_err()` work described above so that
-the diff stayed limited to the error paths. It is still available to anyone who
-wants a warning-free build.
+recoverable errors back into `std::exit(1)` and reintroduce the descriptor leak
+— the worst possible regressions for a library. That risk buys nothing.
 
 ## If you do re-vendor
 

@@ -318,7 +318,7 @@ source.
 failure instead of raising; check the return value.
 
 Running out of memory is the exception to that rule: ``save()`` and ``load()``
-raise ``RuntimeError`` rather than returning ``-1``. A failed ``load()`` leaves
+raise ``MemoryError`` rather than returning ``-1``. A failed ``load()`` leaves
 the trie **empty**, because the previous contents are released before the new
 ones are allocated. The instance stays valid and can be reused. See
 [``pycedar/core/cedar/README.md``](pycedar/core/cedar/README.md).

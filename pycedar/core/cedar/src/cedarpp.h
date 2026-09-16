@@ -3,12 +3,14 @@
 // Copyright (c) 2009-2014 Naoki Yoshinaga <ynaga@tkl.iis.u-tokyo.ac.jp>
 //
 // NOTE (pycedar): this is a vendored copy carrying local modifications. Four of
-// the five _err() call sites throw std::runtime_error instead of calling
-// std::exit(1) (hence <stdexcept>); the fifth is in dump(), which pycedar never
-// reaches. _consult() is synced with upstream
-// revision 1916 (2017-07-12). Apart from that, this file is functionally
-// identical to cedar-2022-03-18 -- whose cedarpp.h is itself unchanged since
-// 2017, so there is nothing newer to pick up.
+// the five _err() call sites throw instead of calling std::exit(1) -- allocation
+// failures throw std::bad_alloc, which reaches Python as MemoryError -- and the
+// fifth is in dump(), which pycedar never reaches. open() also closes the file
+// on its early returns, which upstream does not. _consult(), the clear() layout
+// and the STATIC_ASSERT pragmas are synced with upstream revision 1916
+// (2017-07-12). Apart from that, this file is functionally identical to
+// cedar-2022-03-18 -- whose cedarpp.h is itself unchanged since 2017, so there
+// is nothing newer to pick up.
 //
 // Before editing or re-vendoring this file, read ../../README.md in this
 // repository (pycedar/core/cedar/README.md). It records what was changed, why,
@@ -21,6 +23,7 @@
 #include <cstring>
 #include <climits>
 #include <cassert>
+#include <new>       // std::bad_alloc
 #include <stdexcept> // std::runtime_error
 
 #ifdef HAVE_CONFIG_H
@@ -83,9 +86,11 @@ namespace cedar {
       block () : prev (0), next (0), num (256), reject (257), trial (0), ehead (0) {}
     };
     da () : tracking_node (), _array (0), _tail (0), _tail0 (0), _ninfo (0), _block (0), _bheadF (0), _bheadC (0), _bheadO (0), _capacity (0), _size (0), _quota (0), _quota0 (0), _no_delete (false), _reject () {
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
       STATIC_ASSERT(sizeof (value_type) <= sizeof (int),
                     value_type_is_not_supported___maintain_a_value_array_by_yourself_and_store_its_index_to_trie
                     );
+#pragma GCC diagnostic warning "-Wunused-local-typedefs"
       _initialize ();
     }
     ~da () { clear (false); }
@@ -338,7 +343,7 @@ namespace cedar {
       if (! t.tail)
         // pycedar: nothing has been mutated yet, so the trie survives intact.
         //_err (__FILE__, __LINE__, "memory allocation failed\n");
-        throw std::runtime_error("memory allocation failed\n");
+        throw std::bad_alloc ();
       *t.length = static_cast <int> (sizeof (int));
       for (int to = 0; to < _size; ++to) {
         node& n = _array[to];
@@ -390,16 +395,16 @@ namespace cedar {
       if (! fp) return -1;
       // get size
       if (! size_) {
-        if (std::fseek (fp, 0, SEEK_END) != 0) return -1;
+        if (std::fseek (fp, 0, SEEK_END) != 0) { std::fclose (fp); return -1; }
         size_ = static_cast <size_t> (std::ftell (fp));
-        if (std::fseek (fp, 0, SEEK_SET) != 0) return -1;
+        if (std::fseek (fp, 0, SEEK_SET) != 0) { std::fclose (fp); return -1; }
       }
-      if (size_ <= offset) return -1;
-      if (std::fseek (fp, static_cast <long> (offset), SEEK_SET) != 0) return -1;
+      if (size_ <= offset) { std::fclose (fp); return -1; }
+      if (std::fseek (fp, static_cast <long> (offset), SEEK_SET) != 0) { std::fclose (fp); return -1; }
       int len = 0;
-      if (std::fread (&len, sizeof (int), 1, fp) != 1) return -1;
+      if (std::fread (&len, sizeof (int), 1, fp) != 1) { std::fclose (fp); return -1; }
       const size_t length_ = static_cast <size_t> (len);
-      if (size_ <= offset + length_) return -1;
+      if (size_ <= offset + length_) { std::fclose (fp); return -1; }
       // set array
       clear (false);
       size_ = (size_ - offset - length_) / sizeof (node);
@@ -419,12 +424,12 @@ namespace cedar {
           // otherwise the caller would be handed a half-built object.
           std::fclose (fp);
           clear (true);
-          throw std::runtime_error("memory allocation failed\n");
+          throw std::bad_alloc ();
         }
-      if (std::fseek (fp, static_cast <long> (offset), SEEK_SET) != 0) return -1;
+      if (std::fseek (fp, static_cast <long> (offset), SEEK_SET) != 0) { std::fclose (fp); return -1; }
       if (length_ != std::fread (_tail,  sizeof (char), length_, fp) ||
           size_   != std::fread (_array, sizeof (node), size_,   fp))
-        return -1;
+        { std::fclose (fp); return -1; }
       std::fclose (fp);
       _size = static_cast <int> (size_);
       *_length0 = 0;
@@ -439,7 +444,7 @@ namespace cedar {
       std::fread (&_bheadO, sizeof (int), 1, fp);
       if (size_      != std::fread (_ninfo, sizeof (ninfo), size_, fp) ||
           size_ >> 8 != std::fread (_block, sizeof (block), size_ >> 8, fp))
-        return -1;
+        { std::fclose (fp); return -1; }
       std::fclose (fp);
       _capacity = _size;
       _quota  = *_length;
@@ -468,11 +473,12 @@ namespace cedar {
     const void* array () const { return _array; }
     void clear (const bool reuse = true) {
       if (_no_delete) _array = 0, _tail = 0;
-      if (_array) std::free (_array); _array = 0;
-      if (_tail)  std::free (_tail);  _tail  = 0;
-      if (_tail0) std::free (_tail0); _tail0 = 0;
-      if (_ninfo) std::free (_ninfo); _ninfo = 0;
-      if (_block) std::free (_block); _block = 0;
+      if (_array) std::free (_array);
+      if (_tail)  std::free (_tail);
+      if (_tail0) std::free (_tail0);
+      if (_ninfo) std::free (_ninfo);
+      if (_block) std::free (_block);
+      _array = 0; _tail = 0; _tail0 = 0; _ninfo = 0; _block = 0;
       _bheadF = _bheadC = _bheadO = _capacity = _size = _quota = _quota0 = 0;
       if (reuse) _initialize ();
       _no_delete = false;
@@ -543,7 +549,7 @@ namespace cedar {
       void* tmp = std::realloc (p, sizeof (T) * static_cast <size_t> (size_n));
       if (! tmp)
         //std::free (p), _err (__FILE__, __LINE__, "memory reallocation failed\n");
-        throw std::runtime_error("memory reallocation failed");
+        throw std::bad_alloc ();
       p = static_cast <T*> (tmp);
       static const T T0 = T ();
       for (T* q (p + size_p), * const r (p + size_n); q != r; ++q) *q = T0;
