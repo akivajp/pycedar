@@ -722,7 +722,7 @@ def test_stub_covers_public_api():
     }
     documented_dunders = {
         'dict': {'__len__', '__contains__', '__iter__', '__getitem__',
-                 '__setitem__', '__delitem__', '__reduce__'},
+                 '__setitem__', '__delitem__', '__repr__', '__reduce__'},
         'base_trie': {'__reduce__'},
         'str_trie': {'__reduce__'},
         'bytes_trie': '__reduce__',
@@ -805,3 +805,109 @@ def test_concurrent_tries_are_independent():
         t.join()
     failures = [(i, reason) for i, reason, _ in results if reason is not None]
     assert not failures, failures
+
+
+def _random_words(count, alphabet, max_len, seed=42):
+    import random
+
+    rng = random.Random(seed)
+    return [
+        ''.join(rng.choice(alphabet) for _ in range(rng.randint(1, max_len)))
+        for _ in range(count)
+    ]
+
+
+def test_icommon_prefix_matches_list_versions():
+    """The lazy variants must return exactly what the list versions return:
+    same triples in the same order, over str and bytes keys, for several
+    prefixes, max_size values and a non-root from_id.
+    (遅延版は list 版と同じ要素を同じ順で返すこと。str/bytes 両方で複数の
+     プレフィックス、max_size、非ルートの from_id について検証する)"""
+    cases = (
+        (pycedar.str_trie, _random_words(300, 'abcdef', 6), ['', 'a', 'ab', 'abcdef', 'zzz', '']),
+        (pycedar.bytes_trie, [w.encode() for w in _random_words(300, 'abcdef', 6)],
+         [b'', b'a', b'ab', b'abcdef', b'zzz']),
+    )
+    for trie_cls, words, probes in cases:
+        trie = trie_cls()
+        for i, word in enumerate(words):
+            trie.set(word, i)
+        for probe in probes:
+            assert trie.common_prefix_search(probe) == list(trie.icommon_prefix_search(probe))
+            assert trie.common_prefix_predict(probe) == list(trie.icommon_prefix_predict(probe))
+        # max_size caps both variants identically; 0 yields nothing.
+        # (max_size の上限は両者で同じ。0 は何も返さない)
+        for max_size in (0, 1, 3, 10, -1):
+            assert list(trie.icommon_prefix_search(probes[1], 0, max_size)) == \
+                trie.common_prefix_search(probes[1], 0, max_size)
+            assert list(trie.icommon_prefix_predict(probes[1], 0, max_size)) == \
+                trie.common_prefix_predict(probes[1], 0, max_size)
+        # A subtree root scopes predict the same way in both versions.
+        # (部分木の根を from_id に渡した場合も両版で同じ)
+        _, subtree, _ = trie.traverse(probes[1])
+        assert trie.common_prefix_predict(probes[-1], subtree) == \
+            list(trie.icommon_prefix_predict(probes[-1], subtree))
+
+
+def test_icommon_prefix_generators_are_lazy():
+    """The i-prefixed queries return iterators, not lists.
+    (i 付きクエリは list ではなくイテレータを返すこと)"""
+    trie = pycedar.str_trie()
+    trie.set('apple', 1)
+    for gen in (trie.icommon_prefix_search('apple'), trie.icommon_prefix_predict('a')):
+        assert iter(gen) is gen
+        assert list(gen)  # iterable one item at a time (1件ずつ反復できる)
+
+
+def test_loads_accepts_bytes_like_and_rejects_others():
+    """loads() takes any bytes-like image and keeps its contents when the
+    image is rejected; non-buffer types raise TypeError.
+    (loads() は bytes 類のイメージを受け付け、不正なイメージは中身を保持した
+     まま拒否する。バッファ以外は TypeError)"""
+    d = pycedar.dict()
+    d['x'] = 7
+    image = d.dumps()
+
+    for data in (bytearray(image), memoryview(bytearray(image))):
+        fresh = pycedar.dict()
+        assert fresh.loads(data) == 0
+        assert fresh['x'] == 7
+
+    # An empty image is malformed by definition. (空のイメージは定義上不正)
+    fresh = pycedar.dict()
+    assert fresh.loads(b'') == -1
+    assert fresh.loads(bytearray()) == -1
+
+    # A malformed image is rejected without touching the contents.
+    # (不正なイメージは中身を触らずに拒否される)
+    fresh['x'] = 7
+    assert fresh.loads(bytearray(b'bad')) == -1
+    assert fresh['x'] == 7
+
+    with pytest.raises(TypeError):
+        fresh.loads('not a buffer')
+
+
+def test_dict_repr_is_capped_and_dict_like():
+    """repr shows at most _REPR_MAX_ITEMS pairs in sorted-key order, marks the
+    cut with '...', and keeps bytes keys distinguishable.
+    (repr はソート順に上限件数まで表示し、それ以上は '...' で省略する。
+     bytes のキーも見分けがつくこと)"""
+    d = pycedar.dict()
+    assert repr(d) == 'pycedar.dict({})'
+
+    d['apple'] = 1
+    assert repr(d) == "pycedar.dict({'apple': 1})"
+
+    d = pycedar.dict()
+    for i in range(12):
+        d['k%02d' % i] = i
+    text = repr(d)
+    assert text.count(': ') == 8, text
+    assert text.startswith("pycedar.dict({'k00': 0, ")
+    assert text.endswith(', ...})'), text
+    assert "'k08'" not in text
+
+    b = pycedar.dict(bytes)
+    b[b'bb'] = 3
+    assert repr(b) == "pycedar.dict({b'bb': 3})"

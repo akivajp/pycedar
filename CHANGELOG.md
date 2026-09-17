@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free-threaded interpreter (tested on ``3.14t``). Wheels for ``cp314t`` are
   built by CI. This covers concurrency across distinct trie objects;
   concurrent operations on the *same* trie are still not thread-safe.
+- Lazy generator variants of the prefix queries on the trie classes:
+  ``icommon_prefix_search()`` and ``icommon_prefix_predict()`` yield the same
+  triples in the same order as their list-returning counterparts, one at a
+  time, instead of materializing the whole result. Implemented once on
+  ``base_trie`` and inherited by every specialization.
+- ``loads()`` accepts any bytes-like image — ``bytearray``, ``memoryview``
+  and other one-dimensional C-contiguous buffers — in addition to ``bytes``.
+- ``repr()`` on ``pycedar.dict``: a dict-like display in sorted-key order,
+  capped to the first eight pairs followed by ``...`` for large tries.
 
 ## [0.5.0] - 2026-09-18
 

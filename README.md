@@ -257,6 +257,20 @@ Note the difference between the two prefix queries:
 * ``common_prefix_predict(key)`` returns the **remaining suffixes** of every key
   that starts with ``key``.
 
+Both also have lazy variants that yield one triple at a time instead of
+building a list, which matters when a query can match a large part of the trie
+or when the first hits are all you need:
+
+```python
+>>> [key for key, value, node_id in t.icommon_prefix_predict('app')]   # 'apply' was erased above
+['le', 'let']
+>>> list(t.icommon_prefix_search('applet'))
+[('apple', 1, 259), ('applet', 2, 368)]
+```
+
+The lazy variants return the same triples in the same order as the list
+versions; results are not guaranteed if the trie is modified while iterating.
+
 Enumerating a trie (or a subtree) uses ``begin`` / ``next``:
 
 ```python
@@ -287,7 +301,9 @@ Base class for every trie. Not meant to be instantiated directly.
 | ``open(filepath, mode='rb', offset=0, size=0)`` | Load a trie image. Returns ``0`` on success, ``-1`` on failure. |
 | ``save(filepath, mode='wb', shrink=True)`` | Write a trie image. Returns ``0`` on success, ``-1`` on failure. |
 | ``dumps(shrink=True)`` | The trie image as ``bytes``. The layout is byte-for-byte what ``save()`` writes, so the two are interchangeable. |
-| ``loads(data)`` | Replace the trie with a ``bytes`` image. Returns ``0`` / ``-1``. Unlike a failed ``load()``, malformed input is rejected before the current contents are touched, so the trie keeps them. |
+| ``loads(data)`` | Replace the trie with an image from any bytes-like object (``bytes``, ``bytearray``, ``memoryview``, ...). Returns ``0`` / ``-1``. Unlike a failed ``load()``, malformed input is rejected before the current contents are touched, so the trie keeps them. |
+| ``icommon_prefix_search(key, from_id=0, max_size=-1)`` | Lazy generator variant of ``common_prefix_search()``; yields the same ``(key, value, node_id)`` triples one at a time. Inherited by the specializations. |
+| ``icommon_prefix_predict(key, from_id=0, max_size=-1)`` | Lazy generator variant of ``common_prefix_predict()``; yields the same ``(suffix, value, node_id)`` triples one at a time. Inherited by the specializations. |
 
 ### ``pycedar.str_trie`` / ``pycedar.bytes_trie`` / ``pycedar.unicode_trie``
 
@@ -352,7 +368,7 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 | ``save(filepath, mode='wb', shrink=True)`` | Write a trie image. Returns ``0`` / ``-1``. |
 | ``load(filepath, mode='rb')`` | Replace the trie with a stored image. Returns ``0`` / ``-1``. |
 | ``dumps(shrink=True)`` | The trie image as ``bytes``; interchangeable with ``save()`` files. |
-| ``loads(data)`` | Replace the trie with a ``bytes`` image from ``dumps()``/``save()``. Returns ``0`` / ``-1``. |
+| ``loads(data)`` | Replace the trie with an image from ``dumps()``/``save()``, given as any bytes-like object (``bytes``, ``bytearray``, ``memoryview``, ...). Returns ``0`` / ``-1``. |
 
 ``pycedar.dict`` (and the trie classes) support ``pickle``, ``copy.copy()`` and
 ``copy.deepcopy()`` through the same serialized image.

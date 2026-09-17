@@ -32,6 +32,11 @@ cdef extern from "cedarpp.h" namespace "cedar":
 
         value_type traverse (const char* key, npos_t& from_, size_t& pos) const
 
+        # The 4-arg overload lets a resumed walk stop at an exact byte count;
+        # cedar's own commonPrefixSearch is the same loop over _find with
+        # pos + 1. (len を指定して漸進的に歩むためのオーバーロード)
+        value_type traverse (const char* key, npos_t& from_, size_t& pos, size_t len) const
+
         value_type& update (const char* key, size_t len, value_type val) except +
 
         int erase (const char* key, size_t len, npos_t from_) except +

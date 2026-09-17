@@ -252,6 +252,19 @@ API が返す長さは文字数ではなく**バイト長**です。
 * ``common_prefix_search(key)`` は ``key`` の**接頭辞になっている完全なキー**を返します。
 * ``common_prefix_predict(key)`` は ``key`` で始まる全キーの**残りの接尾辞**を返します。
 
+どちらにも、結果をリストにまとめず1要素ずつ生成する遅延版があります。クエリが
+トライの大部分に一致しうる場合や、先頭の数件だけで十分な場合に有効です。
+
+```python
+>>> [key for key, value, node_id in t.icommon_prefix_predict('app')]   # この時点で 'apply' は削除済み
+['le', 'let']
+>>> list(t.icommon_prefix_search('applet'))
+[('apple', 1, 259), ('applet', 2, 368)]
+```
+
+遅延版は list 版と同じ組を同じ順で返します。反復中にトライを変更した場合の
+結果は保証されません。
+
 トライ（または部分木）の列挙には ``begin`` / ``next`` を使います。
 
 ```python
@@ -282,7 +295,9 @@ applet 2
 | ``open(filepath, mode='rb', offset=0, size=0)`` | トライ像を読み込む。成功で ``0``、失敗で ``-1``。 |
 | ``save(filepath, mode='wb', shrink=True)`` | トライ像を書き出す。成功で ``0``、失敗で ``-1``。 |
 | ``dumps(shrink=True)`` | トライ像を ``bytes`` として返す。``save()`` が書き出すものとバイト単位で同一レイアウトのため、相互運用できる。 |
-| ``loads(data)`` | ``bytes`` のトライ像で中身を置き換える。``0`` / ``-1`` を返す。失敗した ``load()`` と異なり、不正な入力は現在の中身に触れる前に拒否されるため、中身は保持される。 |
+| ``loads(data)`` | bytes 類（``bytes``、``bytearray``、``memoryview`` など）が格納するトライ像で中身を置き換える。``0`` / ``-1`` を返す。失敗した ``load()`` と異なり、不正な入力は現在の中身に触れる前に拒否されるため、中身は保持される。 |
+| ``icommon_prefix_search(key, from_id=0, max_size=-1)`` | ``common_prefix_search()`` の遅延ジェネレータ版。同じ ``(キー, 値, ノードID)`` を1件ずつ生成する。各特殊化クラスが継承する。 |
+| ``icommon_prefix_predict(key, from_id=0, max_size=-1)`` | ``common_prefix_predict()`` の遅延ジェネレータ版。同じ ``(接尾辞, 値, ノードID)`` を1件ずつ生成する。各特殊化クラスが継承する。 |
 
 ### ``pycedar.str_trie`` / ``pycedar.bytes_trie`` / ``pycedar.unicode_trie``
 
@@ -346,7 +361,7 @@ applet 2
 | ``save(filepath, mode='wb', shrink=True)`` | トライ像を書き出す。``0`` / ``-1`` を返す。 |
 | ``load(filepath, mode='rb')`` | 保存済みのトライ像で置き換える。``0`` / ``-1`` を返す。 |
 | ``dumps(shrink=True)`` | トライ像を ``bytes`` として返す。``save()`` のファイルと相互運用できる。 |
-| ``loads(data)`` | ``dumps()``/``save()`` が生成した ``bytes`` のトライ像で置き換える。``0`` / ``-1`` を返す。 |
+| ``loads(data)`` | ``dumps()``/``save()`` が生成したトライ像を bytes 類（``bytes``、``bytearray``、``memoryview`` など）で渡して置き換える。``0`` / ``-1`` を返す。 |
 
 ``pycedar.dict`` (およびトライクラス) は、同じ直列化イメージを経由して
 ``pickle``、``copy.copy()``、``copy.deepcopy()`` に対応しています。

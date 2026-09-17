@@ -60,6 +60,13 @@ cdef int _NO_PATH  = -2
 #  呼び出し側が None や偽値を渡しても判別できる)
 _POP_MISSING = object()
 
+### cap on the pairs shown by dict.__repr__
+# A trie can hold millions of keys; showing all of them would produce an
+# unusable string. The repr shows at most this many pairs, then '...'.
+# (トライは大量のキーを格納しうるため、repr で全件を出すと文字列が使い物に
+#  ならなくなる。上限件数を超えた分は '...' で省略する)
+cdef Py_ssize_t _REPR_MAX_ITEMS = 8
+
 ### compatible converters (bytes <-> {str,unicode})
 
 cdef bytes py2_str_to_bytes(str s):
@@ -202,26 +209,35 @@ cdef class base_trie:
             # (bytes オブジェクトが中身をコピーするため、バッファは直後に解放してよい)
             free(buf)
 
-    cpdef int loads(self, bytes data):
+    cpdef int loads(self, object data):
         """Replace the trie with a serialized image. (直列化イメージで中身を置き換える)
 
-        Accepts the bytes produced by ``dumps()`` (or ``save()``). Returns ``0``
-        on success and ``-1`` for malformed input, matching the ``save()`` /
-        ``load()`` convention. Unlike ``load()``, a malformed image is rejected
-        before the current contents are touched, so the trie keeps them and
-        stays reusable; only an allocation failure (raised as ``MemoryError``)
-        can leave it empty, as with ``load()``. The caller's buffer is copied,
-        so it may be released right after the call.
-        (dumps() または save() が生成した bytes を受け取る。save()/load() の慣習に
-         合わせ、成功時 0、不正入力時 -1 を返す。load() と異なり、不正なイメージは
-         現在の中身に触れる前に拒否されるため中身は保持される。MemoryError となり
-         うる確保失敗のみ、load() と同様にトライは空になる。バッファはコピーされる
-         ため、呼び出し後すぐ解放してよい)
+        Accepts any bytes-like object holding the image produced by
+        ``dumps()`` (or ``save()``) — ``bytes``, ``bytearray``, a
+        ``memoryview``, and other one-dimensional C-contiguous buffers.
+        Returns ``0`` on success and ``-1`` for malformed input, matching the
+        ``save()`` / ``load()`` convention. Unlike ``load()``, a malformed
+        image is rejected before the current contents are touched, so the
+        trie keeps them and stays reusable; only an allocation failure
+        (raised as ``MemoryError``) can leave it empty, as with ``load()``.
+        The caller's buffer is copied, so it may be released right after the
+        call.
+        (dumps() または save() が生成したイメージを格納した bytes 類を受け取る。
+         bytes, bytearray, memoryview 等の1次元 C 連続バッファを受け付ける。
+         save()/load() の慣習に合わせ、成功時 0、不正入力時 -1 を返す。load() と
+         異なり、不正なイメージは現在の中身に触れる前に拒否されるため中身は
+         保持される。MemoryError となりうる確保失敗のみ、load() と同様にトライは
+         空になる。バッファはコピーされるため、呼び出し後すぐ解放してよい)
         """
-        cdef char* buf = NULL
-        cdef Py_ssize_t length = 0
-        PyBytes_AsStringAndSize(data, &buf, &length)
-        return self.obj.open(buf, <size_t>length)
+        cdef const unsigned char[::1] view = data
+        if view.shape[0] == 0:
+            # The image always carries the tail-length prefix, so an empty
+            # buffer is malformed by definition; report it without taking the
+            # address of a zero-length view.
+            # (イメージは必ず tail 長のプレフィックスを持つため、空バッファは
+            #  定義上不正。長さ0のビューのアドレスは取らない)
+            return -1
+        return self.obj.open(<const char*>(&view[0]), <size_t>view.shape[0])
 
     def __reduce__(self):
         # Pickle through the serialized image, passing the class explicitly so
@@ -229,6 +245,44 @@ cdef class base_trie:
         # (直列化イメージ経由で pickle 化する。特殊化クラスがそのまま復元されるよう
         #  クラスオブジェクトを明示的に渡す)
         return (_trie_from_image, (self.__class__, self.dumps()))
+
+    ### lazy variants of the prefix queries (前方一致クエリの遅延版)
+    # Implemented once here and inherited by every specialization; the key
+    # conversion dispatches on the trie's key type. Generators must be plain
+    # def (Cython does not allow cpdef generators).
+    # (ここに一度だけ実装し各特殊化クラスが継承する。キー型の検査はトライに
+    #  応じて行われる。ジェネレータは cpdef にできないため def)
+
+    def icommon_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
+        """Lazily yield ``(key, value, node_id)`` for every stored key that is
+        a prefix of ``key``, in increasing length order.
+
+        Same results in the same order as
+        ``common_prefix_search()``, produced one at a time so that no list is
+        materialized; iterate it or convert with ``list()``. Results are not
+        guaranteed if the trie is modified while iterating.
+        (key の前置キーを短い順に ``(key, value, node_id)`` で遅延生成する。
+         common_prefix_search() と同じ結果を同じ順で1件ずつ生成する。
+         list に変換するかそのまま反復する。反復中にトライを変更した場合の
+         結果は保証されない)
+        """
+        return _iter_common_prefix_search(self, key, from_id, max_size)
+
+    def icommon_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
+        """Lazily yield ``(suffix, value, node_id)`` for every stored key that
+        starts with ``key``, in sorted-key order.
+
+        The key field is the part of each matching key *below* ``key`` — the
+        same relative suffix the list version returns. Same results in the
+        same order as ``common_prefix_predict()``, produced one at a time;
+        iterate it or convert with ``list()``. Results are not guaranteed if
+        the trie is modified while iterating.
+        (key で始まるキーをソート順に ``(suffix, value, node_id)`` で遅延生成する。
+         key フィールドは list 版と同じく、プレフィックス key より下の部分のみ。
+         common_prefix_predict() と同じ結果を同じ順で1件ずつ生成する。
+         反復中にトライを変更した場合の結果は保証されない)
+        """
+        return _iter_common_prefix_predict(self, key, from_id, max_size)
 
     ### type dependent operations (型に依存する操作)
     # Declared here purely so that calls dispatch through the vtable. The shared
@@ -427,6 +481,99 @@ cdef int update(base_trie trie, const char* key, size_t keylen, int delta=0) exc
         trie.obj.update(key, keylen, -delta)
         raise ValueError(reserved_value_message(result))
     return result
+
+### lazy variants of the prefix queries
+# Generator versions of common_prefix_search / common_prefix_predict. They
+# reuse the same cedar primitives the dict facade's lazy iterators (node
+# traversal, find()) use: traverse() for the stepped walk, begin()/next() for
+# the subtree enumeration. Results are produced one at a time instead of
+# materializing a list, with the same (key, value, node_id) triples in the
+# same order as the list versions.
+# (common_prefix_search / common_prefix_predict の遅延版。dict ファサードの
+#  find() 等と同じく traverse() と begin()/next() を使用する。list 版と同じ
+#  (key, value, node_id) の組を同じ順で1件ずつ生成する)
+
+cdef inline const char* _borrow_key(base_trie trie, object key, Py_ssize_t* length) except NULL:
+    """Borrow the key's buffer following the trie's key type.
+    (トライのキー型に応じてキーのバッファを借りる。返すのは key 自身への借用)"""
+    if isinstance(trie, bytes_trie):
+        return key_as_bytes(key, length)
+    return key_as_utf8(key, length)
+
+def _iter_common_prefix_search(base_trie trie, object key, npos_t from_id, int max_size):
+    cdef Py_ssize_t keylen
+    cdef const char* buf
+    cdef int value
+    cdef int count = 0
+    cdef npos_t node_id = from_id
+    cdef size_t pos = 0
+    cdef size_t limit
+    # The type check runs when the generator body first executes, and the
+    # generator frame keeps `key` alive, so the borrowed buffer stays valid
+    # for the whole iteration.
+    # (型検査はジェネレータ本体の初回実行時に行われる。フレームが key を保持し
+    #  続けるため、借用したバッファは反復中ずっと有効)
+    buf = _borrow_key(trie, key, &keylen)
+    # Matches the list version: an empty key can never be a strict prefix.
+    # (list 版に合わせる。空キーは前置キーになり得ない)
+    if keylen == 0 or max_size == 0:
+        return
+    # traverse() consumes the key up to its `len` argument in one call, so
+    # feed it a growing length: node_id/pos are in/out parameters, so each
+    # call resumes at the node the previous one stopped at. This mirrors
+    # cedar's own commonPrefixSearch, which is a loop of _find(key, from,
+    # pos, pos + 1); node_id is the same tail-encoded cursor that cedar
+    # stores into the results, so suffix() reconstructs the keys the same
+    # way for both versions.
+    # (traverse() は len 引数までのキーを1回で消費するため、長さを1ずつ伸ばしな
+    #  がら再開する。node_id/pos は in/out なので直前のノードからの続きになる。
+    #  cedar 本体の commonPrefixSearch が _find(key, from, pos, pos + 1) の
+    #  ループであるのと同じ構造で、node_id も結果に記録されるのと同じ
+    #  tail エンコードのカーソルなので、suffix() の復元も両版で同一になる)
+    for limit in range(1, keylen + 1):
+        value = trie.obj.traverse(buf, node_id, pos, limit)
+        if value == _NO_PATH:
+            return
+        # A key ends at this length only when the value is set.
+        # (値が設定されているときだけ、この長さでキーが終端している)
+        if value != _NO_VALUE:
+            yield (trie.suffix(node_id, limit), value, node_id)
+            count += 1
+            if max_size > 0 and count >= max_size:
+                return
+
+def _iter_common_prefix_predict(base_trie trie, object key, npos_t from_id, int max_size):
+    cdef Py_ssize_t keylen
+    cdef const char* buf
+    cdef int value
+    cdef int count = 0
+    cdef npos_t node_id
+    cdef npos_t subtree_root
+    cdef size_t length
+    buf = _borrow_key(trie, key, &keylen)
+    if max_size == 0:
+        return
+    # Walk the prefix once to find the subtree it ends at.
+    # (プレフィックスを一度たどり、その終端の部分木を得る)
+    subtree_root = from_id
+    length = 0
+    value = trie.obj.traverse(buf, subtree_root, length)
+    if value == _NO_PATH:
+        return
+    # Enumerate the stored keys below that subtree root, the same way cedar's
+    # own commonPrefixPredict does: begin() is handed 0 as the length, so the
+    # key field of every yielded triple is the part of the key *below* the
+    # queried prefix, exactly as the list version returns.
+    # (部分木の根の下を列挙。cedar 本体の commonPrefixPredict と同じく begin()
+    #  には 0 を渡す。これにより各要素の key フィールドはプレフィックスより
+    #  下の部分のみになり、list 版と同一の返り値になる)
+    value, node_id, length = trie.begin(subtree_root, 0)
+    while value != _NO_PATH:
+        yield (trie.suffix(node_id, length), value, node_id)
+        count += 1
+        if max_size > 0 and count >= max_size:
+            return
+        value, node_id, length = trie.next(node_id, length, subtree_root)
 
 ### specialized trie classes
 
@@ -795,11 +942,11 @@ cdef class dict:
         """
         return self.trie.dumps(shrink)
 
-    cpdef int loads(self, bytes data):
+    cpdef int loads(self, object data):
         """
         replace the trie with a serialized image (see pycedar.base_trie.loads)
-        :param data: bytes produced by dumps() or save()
-        :return: 0 on success, -1 on malformed input (the trie is left empty)
+        :param data: bytes-like object holding an image produced by dumps() or save()
+        :return: 0 on success, -1 on malformed input (the current contents are kept)
         """
         return self.trie.loads(data)
 
@@ -913,3 +1060,26 @@ cdef class dict:
         # (直列化イメージ経由で pickle 化する。キー型も渡し、復元後に同じ型検査が
         #  働くようにする)
         return (_dict_from_image, (self.type, self.dumps()))
+
+    def __repr__(self):
+        """Dict-like repr, capped to keep huge tries readable.
+        (dict 風の repr。巨大トライでも読めるよう表示件数を制限する)
+
+        Shows the first ``pycedar._REPR_MAX_ITEMS`` pairs in sorted-key order
+        followed by ``...`` when the trie holds more than that.
+        (ソート順の先頭 _REPR_MAX_ITEMS 件を表示し、それ以上ある場合は
+         ``...`` を付ける)
+        """
+        cdef Py_ssize_t shown = 0
+        pairs = []
+        for key, value in self.items():
+            if shown >= _REPR_MAX_ITEMS:
+                # The trie holds more than we show; mark the truncation.
+                # (表示上限を超えたため省略記号を付ける)
+                pairs.append('...')
+                break
+            pairs.append('%r: %d' % (key, value))
+            shown += 1
+        if not pairs:
+            return 'pycedar.dict({})'
+        return 'pycedar.dict({%s})' % ', '.join(pairs)
