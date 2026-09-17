@@ -67,8 +67,12 @@ jobs:
       matrix:
         # macos-latest is Apple silicon; cibuildwheel cross-compiles the
         # x86_64 wheels from there (see [tool.cibuildwheel.macos]).
-        # (macos-latest は arm64。x86_64 は同ランナーからクロスビルドする)
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        # windows-latest is x86_64 and validates the MSVC build per push on
+        # the tests workflow.
+        # (macos-latest は arm64。x86_64 は同ランナーからクロスビルドする。
+        #  windows-latest は x86_64 で、MSVC ビルドは tests ワークフローが
+        #  push のたびに検証する)
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: pypa/cibuildwheel@v4.2.1

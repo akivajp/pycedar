@@ -26,3 +26,9 @@ test-command = "pytest {project}/tests"
 # cibuildwheel skips the test step for wheels it cannot run natively.
 # (arm64ランナーからx86_64をクロスビルドする。実行できないwheelのテストは自動でスキップされる)
 archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+# The x86_64 build only; the test matrix covers it and an ARM64 Windows
+# runner would add a cross-compile setup for little demand.
+# (x86_64 のみ。ARM64 Windows ランナーでのクロスビルド設定は需要が見えてから)
+archs = ["AMD64"]

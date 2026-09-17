@@ -13,12 +13,12 @@ Official URL of ``cedar``: http://www.tkl.iis.u-tokyo.ac.jp/~ynaga/cedar/
 ## Requirements
 
 * Python 3.9 or newer
-* A POSIX-compatible 64-bit platform (Linux, macOS)
-* A C++ compiler, when building from source
+* A 64-bit platform: Windows, or a POSIX-compatible one (Linux, macOS)
+* A C++ compiler, when building from source (wheels need none)
 
-The extension is tested with CPython 3.9 through 3.14 on Linux and macOS,
-including the free-threaded build of 3.14 (``3.14t``). The module is declared
-free-threading compatible, so it imports and works on a free-threaded
+The extension is tested with CPython 3.9 through 3.14 on Linux, macOS and
+Windows, including the free-threaded build of 3.14 (``3.14t``). The module is
+declared free-threading compatible, so it imports and works on a free-threaded
 interpreter without a ``ModuleNotFoundError``; concurrency across *distinct*
 trie objects is supported (see [Limitations](#limitations)).
 

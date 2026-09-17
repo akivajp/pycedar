@@ -13,10 +13,10 @@ The English README is available at [README.md](README.md).
 ## 動作環境
 
 * Python 3.9 以降
-* POSIX 互換の 64bit プラットフォーム（Linux, macOS）
-* ソースからビルドする場合は C++ コンパイラ
+* 64bit プラットフォーム（Windows または POSIX 互換の Linux/macOS）
+* ソースからビルドする場合は C++ コンパイラ（wheel では不要）
 
-Linux および macOS 上の CPython 3.9 〜 3.14 で動作を検証しています。Python
+Linux、macOS、Windows 上の CPython 3.9 〜 3.14 で動作を検証しています。Python
 3.14 のフリースレッド版（``3.14t``）も含みます。モジュールはフリースレッド
 対応を宣言しているため、フリースレッドインタプリタ上で ``ModuleNotFoundError``
 にならずに動作します。*別々の* トライオブジェクトを複数スレッドから使う並行

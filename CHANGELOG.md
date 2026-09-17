@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Windows support: the extension builds under MSVC and CI builds ``AMD64``
+  wheels on ``windows-latest``, so prebuilt wheels are now available for
+  Windows alongside Linux and macOS.
 - Free-threaded CPython support: the extension declares itself
   free-threading compatible (PEP 703) via Cython's
   ``freethreading_compatible`` directive, so it imports and works on a
