@@ -114,6 +114,24 @@ def test_update_rolls_back_a_reserved_result():
     assert enumerate_trie(obj) == [('counter', 1)]
 
 
+def test_keys_containing_a_nul_byte_are_rejected():
+    """The raw layer rejects them too, through the shared writers.
+
+    (低水準層も共通の書き込み経路を通るため同様に拒否される)
+    """
+    obj = pycedar.str_trie()
+    with pytest.raises(ValueError):
+        obj.set('a\x00b', 1)
+    with pytest.raises(ValueError):
+        obj.update('a\x00b', 1)
+    assert obj.num_keys() == 0
+
+    raw = pycedar.bytes_trie()
+    with pytest.raises(ValueError):
+        raw.set(b'a\x00b', 1)
+    assert raw.num_keys() == 0
+
+
 def test_erase_reports_whether_the_key_existed(trie):
     assert trie.erase('apply') == 0
     assert trie.exact_match_search('apply')[0] in (NO_VALUE, NO_PATH)

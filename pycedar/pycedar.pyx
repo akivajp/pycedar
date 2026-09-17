@@ -9,6 +9,7 @@ Python binding of cedar (implementation of efficiently-updatable double-array tr
 import sys
 
 # stl classes
+from libc.string cimport memchr
 from libcpp.vector cimport vector
 
 # local libraries
@@ -30,6 +31,16 @@ try:
         __version__ = 'unknown'
 except ImportError:  # pragma: no cover
     __version__ = 'unknown'
+
+### CPython C-API
+# Used to hand cedar a key's bytes without allocating a copy of them.
+# (キーのバイト列をコピーせずに cedar へ渡すために使う)
+cdef extern from "Python.h":
+    bint PyUnicode_Check(object o)
+    const char* PyUnicode_AsUTF8AndSize(object o, Py_ssize_t* size) except NULL
+    bint PyBytes_Check(object o)
+    char* PyBytes_AS_STRING(object o)
+    Py_ssize_t PyBytes_GET_SIZE(object o)
 
 ### sentinel values
 # C level mirrors of base_trie.NO_VALUE / NO_PATH. The class attributes stay as
@@ -191,6 +202,32 @@ cdef class base_trie:
     cpdef int update(self, object key, int delta=0):
         raise NotImplementedError("use one of the specialized trie classes")
 
+### key borrowing
+# These return a pointer into the key object itself, so the caller must keep a
+# reference to that object alive for as long as the pointer is used. Every call
+# site below does: the key is the argument it was handed.
+# (返るのはキー自身の内部へのポインタなので、使用中はキーを生かしておく必要がある。
+#  呼び出し側は引数として受け取ったキーを保持しているため条件を満たす)
+
+cdef inline const char* key_as_utf8(object key, Py_ssize_t* length) except NULL:
+    """Borrow a str's UTF-8 bytes.
+
+    CPython keeps a UTF-8 representation on the object, and for an ASCII string
+    that *is* the string's own storage, so nothing is copied or allocated.
+    (CPython は UTF-8 表現をオブジェクト上に保持する。ASCII なら文字列自身の
+     領域そのものなので、コピーも確保も発生しない)
+    """
+    if not PyUnicode_Check(key):
+        raise TypeError("expected str, but given: %s" % type(key).__name__)
+    return PyUnicode_AsUTF8AndSize(key, length)
+
+cdef inline const char* key_as_bytes(object key, Py_ssize_t* length) except NULL:
+    """Borrow a bytes object's buffer. (bytes のバッファを借りる)"""
+    if not PyBytes_Check(key):
+        raise TypeError("expected bytes, but given: %s" % type(key).__name__)
+    length[0] = PyBytes_GET_SIZE(key)
+    return PyBytes_AS_STRING(key)
+
 ### common functions
 
 # Speculative buffer for an unbounded predict query. Both cedar entry points
@@ -201,11 +238,10 @@ cdef class base_trie:
 #  収まれば1回で済み、収まらなくても正確な大きさで1回やり直すだけでよい)
 cdef size_t _PREDICT_INITIAL_CAPACITY = 64
 
-cdef list common_prefix_predict(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
+cdef list common_prefix_predict(base_trie trie, const char* key, size_t keylen, npos_t from_id=0, int max_size=-1):
     cdef vector[da[int].result_triple_type] result_vector
     cdef list result_list = []
     cdef da[int].result_triple_type r
-    cdef size_t keylen = len(key)
     cdef size_t capacity
     cdef size_t ret
     cdef size_t i
@@ -235,11 +271,10 @@ cdef list common_prefix_predict(base_trie trie, bytes key, npos_t from_id=0, int
         result_list.append( (trie.suffix(r.id, r.length), r.value, r.id) )
     return result_list
 
-cdef list common_prefix_search(base_trie trie, bytes key, npos_t from_id=0, int max_size=-1):
+cdef list common_prefix_search(base_trie trie, const char* key, size_t keylen, npos_t from_id=0, int max_size=-1):
     cdef vector[da[int].result_triple_type] result_vector
     cdef list result_list = []
     cdef da[int].result_triple_type r
-    cdef size_t keylen = len(key)
     cdef size_t capacity
     cdef size_t ret
     cdef size_t i
@@ -265,10 +300,28 @@ cdef list common_prefix_search(base_trie trie, bytes key, npos_t from_id=0, int 
         result_list.append( (trie.suffix(r.id, r.length), r.value, r.id) )
     return result_list
 
-cdef (int, size_t, npos_t) exact_match_search(base_trie trie, bytes key, size_t from_id=0):
+cdef (int, size_t, npos_t) exact_match_search(base_trie trie, const char* key, size_t keylen, size_t from_id=0):
     cdef da[int].result_triple_type result
-    result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, len(key), from_id)
+    result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, keylen, from_id)
     return result.value, result.length, result.id
+
+cdef inline void reject_embedded_nul(const char* key, size_t keylen) except *:
+    """Refuse a key containing a NUL byte. (NUL バイトを含むキーを拒否する)
+
+    cedar stores short suffixes in a NUL terminated tail array, so such a key
+    breaks that invariant. It does not merely read back wrong: inserting one and
+    then inserting a key that shares its prefix corrupts memory and segfaults.
+    Checking here keeps the cost on the write paths, where it is negligible
+    next to the insertion itself.
+    (cedar は NUL 終端の tail 配列に短い接尾辞を格納するため、不変条件が壊れる。
+     読み出しが狂うだけでなく、接頭辞を共有するキーを続けて入れるとメモリ破壊で
+     落ちる。検査は書き込み経路に限り、挿入自体に比べれば無視できる)
+    """
+    if memchr(key, 0, keylen) != NULL:
+        raise ValueError(
+            "key contains a NUL byte, which cedar uses internally as a "
+            "terminator; such a key cannot be stored"
+        )
 
 cdef str reserved_value_message(int value):
     # (予約値を格納しようとしたときのメッセージ)
@@ -278,13 +331,14 @@ cdef str reserved_value_message(int value):
         "'end of traversal'" % (value, _NO_VALUE, _NO_PATH)
     )
 
-cdef int set(base_trie trie, bytes key, int value) except *:
+cdef int set(base_trie trie, const char* key, size_t keylen, int value) except *:
     cdef int* r
-    if not key:
+    if keylen == 0:
         raise KeyError("empty key is invalid")
+    reject_embedded_nul(key, keylen)
     if value == _NO_VALUE or value == _NO_PATH:
         raise ValueError(reserved_value_message(value))
-    r = <int*>&trie.obj.update(key, len(key), value)
+    r = <int*>&trie.obj.update(key, keylen, value)
     r[0] = value
     return r[0]
 
@@ -293,19 +347,20 @@ cdef bytes suffix(base_trie trie, npos_t node_id, size_t length=0):
     trie.obj.suffix(buf, length, node_id)
     return buf
 
-cdef int update(base_trie trie, bytes key, int delta=0) except *:
+cdef int update(base_trie trie, const char* key, size_t keylen, int delta=0) except *:
     cdef int result
-    if not key:
+    if keylen == 0:
         raise KeyError("empty key is invalid")
+    reject_embedded_nul(key, keylen)
     # The result is what matters here, not the delta: a legal delta can still
     # land on a reserved value. Checking afterwards costs one comparison,
     # whereas checking beforehand would cost a second lookup.
     # (問題になるのは加算結果。事前検査では余分なルックアップが要る)
-    result = trie.obj.update(key, len(key), delta)
+    result = trie.obj.update(key, keylen, delta)
     if result == _NO_VALUE or result == _NO_PATH:
         # Roll the delta back so that no reserved value is left behind.
         # (予約値を残さないようデルタを巻き戻す)
-        trie.obj.update(key, len(key), -delta)
+        trie.obj.update(key, keylen, -delta)
         raise ValueError(reserved_value_message(result))
     return result
 
@@ -318,31 +373,43 @@ cdef class bytes_trie(base_trie):
         pass
 
     cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_predict(self, key, from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return common_prefix_predict(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_search(self, key, from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return common_prefix_search(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef int erase(self, object key, npos_t from_id=0):
-        cdef bytes bkey = key
-        return self.obj.erase(bkey, len(bkey), from_id)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return self.obj.erase(buf, <size_t>keylen, from_id)
 
     cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
-        return exact_match_search(self, key, from_id)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return exact_match_search(self, buf, <size_t>keylen, from_id)
 
     cpdef int set(self, object key, int value) except *:
-        return set(self, key, value)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return set(self, buf, <size_t>keylen, value)
 
     cpdef object suffix(self, npos_t node_id, size_t length=0):
         return suffix(self, node_id, length)
 
     cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
-        cdef bytes bkey = key
-        cdef int result = self.obj.traverse(bkey, from_id, pos)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        cdef int result = self.obj.traverse(buf, from_id, pos)
         return result, from_id, pos
 
     cpdef int update(self, object key, int delta=0):
-        return update(self, key, delta)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_bytes(key, &keylen)
+        return update(self, buf, <size_t>keylen, delta)
 
 cdef class str_trie(base_trie):
     '''specialized trie class using python standard str'''
@@ -351,33 +418,43 @@ cdef class str_trie(base_trie):
         pass
 
     cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_predict(self, str_to_bytes(key), from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return common_prefix_predict(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_search(self, str_to_bytes(key), from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return common_prefix_search(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef int erase(self, object key, npos_t from_id=0):
-        cdef bytes bkey = str_to_bytes(key)
-        return self.obj.erase(bkey, len(bkey), from_id)
-
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return self.obj.erase(buf, <size_t>keylen, from_id)
 
     cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
-        cdef bytes bkey = str_to_bytes(key)
-        return exact_match_search(self, bkey, from_id)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return exact_match_search(self, buf, <size_t>keylen, from_id)
 
     cpdef int set(self, object key, int value) except *:
-        return set(self, str_to_bytes(key), value)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return set(self, buf, <size_t>keylen, value)
 
     cpdef object suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_str( suffix(self, node_id, length) )
 
     cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
-        cdef bytes bkey = str_to_bytes(key)
-        cdef int result = self.obj.traverse(bkey, from_id, pos)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        cdef int result = self.obj.traverse(buf, from_id, pos)
         return result, from_id, pos
 
     cpdef int update(self, object key, int delta=0):
-        return update(self, str_to_bytes(key), delta)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return update(self, buf, <size_t>keylen, delta)
 
 cdef class unicode_trie(base_trie):
     '''specialized trie class using python unicode string'''
@@ -386,32 +463,43 @@ cdef class unicode_trie(base_trie):
         pass
 
     cpdef list common_prefix_predict(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_predict(self, unicode_to_bytes(key), from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return common_prefix_predict(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef list common_prefix_search(self, object key, npos_t from_id=0, int max_size=-1):
-        return common_prefix_search(self, unicode_to_bytes(key), from_id, max_size)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return common_prefix_search(self, buf, <size_t>keylen, from_id, max_size)
 
     cpdef int erase(self, object key, npos_t from_id=0):
-        cdef bytes bkey = unicode_to_bytes(key)
-        return self.obj.erase(bkey, len(bkey), from_id)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return self.obj.erase(buf, <size_t>keylen, from_id)
 
     cpdef (int, size_t, npos_t) exact_match_search(self, object key, npos_t from_id=0):
-        cdef bytes bkey = unicode_to_bytes(key)
-        return exact_match_search(self, bkey, from_id)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return exact_match_search(self, buf, <size_t>keylen, from_id)
 
     cpdef int set(self, object key, int value) except *:
-        return set(self, unicode_to_bytes(key), value)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return set(self, buf, <size_t>keylen, value)
 
     cpdef object suffix(self, npos_t node_id, size_t length=0):
         return bytes_to_unicode( suffix(self, node_id, length) )
 
     cpdef (int,npos_t,size_t) traverse(self, object key, npos_t from_id=0, size_t pos=0):
-        cdef bytes bkey = unicode_to_bytes(key)
-        cdef int result = self.obj.traverse(bkey, from_id, pos)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        cdef int result = self.obj.traverse(buf, from_id, pos)
         return result, from_id, pos
 
     cpdef int update(self, object key, int delta=0):
-        return update(self, unicode_to_bytes(key), delta)
+        cdef Py_ssize_t keylen
+        cdef const char* buf = key_as_utf8(key, &keylen)
+        return update(self, buf, <size_t>keylen, delta)
 
 ### utility classes
 

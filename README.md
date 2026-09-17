@@ -352,6 +352,23 @@ visible to iteration, and ``-2`` ended every traversal early, hiding each key
 that came after it. If you are upgrading and were storing either, the values
 were not being read back correctly in the first place.
 
+### Keys cannot contain a NUL byte
+
+cedar keeps short key suffixes in a NUL terminated array, so a key carrying a
+NUL of its own breaks that invariant. Such keys are rejected:
+
+```python
+>>> keyed = pycedar.dict()
+>>> keyed['a\x00b'] = 1
+Traceback (most recent call last):
+    ...
+ValueError: key contains a NUL byte, ...
+```
+
+Before 0.4.0 the write was accepted, and it did more than read back wrong:
+inserting such a key and then inserting one that shared its prefix corrupted
+memory and crashed the interpreter.
+
 ### The serialization format is platform-dependent and unauthenticated
 
 The native cedar ``.dat`` format depends on the pointer size and byte order of

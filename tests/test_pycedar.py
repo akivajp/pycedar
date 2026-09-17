@@ -248,6 +248,44 @@ def test_update_rejects_a_delta_that_lands_on_a_reserved_value():
     assert trie.update('counter', -4) == -3
 
 
+@pytest.mark.parametrize('key_type, key', [(str, 'a\x00b'), (bytes, b'a\x00b')])
+def test_keys_containing_a_nul_byte_are_rejected(key_type, key):
+    """cedar terminates its tail entries with NUL, so such a key corrupts it.
+
+    (cedar は tail の要素を NUL で終端するため、この種のキーは構造を壊す)
+
+    Before 0.4.0 the write was accepted. It did not merely read back wrong:
+    inserting one and then inserting a key sharing its prefix corrupted memory
+    and crashed the interpreter with SIGSEGV.
+    (0.4.0 以前は受理されていた。読み出しが狂うだけでなく、接頭辞を共有する
+     キーを続けて入れるとメモリ破壊で SIGSEGV に至っていた)
+    """
+    trie = pycedar.dict(key_type)
+
+    for write in (lambda: trie.__setitem__(key, 1),
+                  lambda: trie.set(key, 1),
+                  lambda: trie.setdefault(key, 1),
+                  lambda: trie.update(key, 1)):
+        with pytest.raises(ValueError):
+            write()
+
+    assert len(trie) == 0
+
+
+def test_the_sequence_that_used_to_segfault_now_raises():
+    """Pins the exact reproduction of the crash. (クラッシュ再現手順を固定する)"""
+    trie = pycedar.dict()
+
+    with pytest.raises(ValueError):
+        trie['a\x00b'] = 7
+    # The second insert shares the prefix; this is what used to corrupt memory.
+    # (接頭辞を共有する2件目の挿入がメモリ破壊の引き金だった)
+    trie['ac'] = 8
+
+    assert trie['ac'] == 8
+    assert dict(trie.items()) == {'ac': 8}
+
+
 def test_other_values_including_negatives_round_trip():
     trie = pycedar.dict()
     values = (-2 ** 31, -3, 0, 1, 2 ** 31 - 1)
