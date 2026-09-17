@@ -18,6 +18,31 @@ Official URL of ``cedar``: http://www.tkl.iis.u-tokyo.ac.jp/~ynaga/cedar/
 
 The extension is tested with CPython 3.9 through 3.14 on Linux and macOS.
 
+## Why a double-array trie?
+
+A trie encodes the keys into its arrays, so it does not keep a separate string
+object per key, and it answers prefix queries that a hash map cannot.
+
+200000 random lowercase keys of 4 to 16 characters, mapped to integers,
+measured with `benchmarks/bench.py` on CPython 3.13 (Linux, x86_64):
+
+| | builtin `dict` | pycedar |
+| --- | ---: | ---: |
+| hash table and values | 13.43 MB | — |
+| key strings | 9.73 MB | — |
+| node array | — | 2.35 MB |
+| tail array | — | 2.06 MB |
+| **total** | **23.16 MB** | **4.40 MB** |
+| per key | 121 bytes | 23 bytes |
+
+The trade is real and worth stating plainly: a point lookup costs roughly five
+times what a `dict` lookup does (61 ns against 12 ns on the same data). Reach
+for pycedar when the key set is large enough that memory matters, or when you
+need prefix search; reach for a `dict` when you only need point lookups.
+
+Run `python benchmarks/bench.py --help` to reproduce these numbers on your own
+data.
+
 ## Installation
 
 ### install from PyPI release

@@ -20,6 +20,7 @@ import random
 import string
 import sys
 import timeit
+import tracemalloc
 
 import pycedar
 
@@ -82,6 +83,70 @@ def collect(args):
     return keys, results
 
 
+def measure_memory(keys):
+    """Compare what the same mapping costs in a builtin dict and in a trie.
+
+    (同じ対応表を組み込み dict とトライで保持したときのコストを比較する)
+
+    Returns ``(table_bytes, key_bytes, node_bytes, tail_bytes)``. The key strings
+    are counted separately because a builtin dict only references them, while a
+    trie encodes them into its arrays and needs no separate string objects; a
+    caller that does not keep the originals pays for them in the dict case only.
+    (dict はキー文字列を参照するだけだが、トライは配列に符号化するため
+     別途の文字列オブジェクトが不要になる。その差を分けて示す)
+    """
+    tracemalloc.start()
+    before = tracemalloc.get_traced_memory()[0]
+    baseline = {key: index + 1 for index, key in enumerate(keys)}
+    table_bytes = tracemalloc.get_traced_memory()[0] - before
+    del baseline
+    tracemalloc.stop()
+
+    key_bytes = sum(sys.getsizeof(key) for key in keys)
+
+    trie = pycedar.dict()
+    for index, key in enumerate(keys):
+        trie[key] = index + 1
+    raw = trie.trie
+    return table_bytes, key_bytes, raw.total_size(), raw.length()
+
+
+def report_memory(keys, measurement):
+    """Print the memory comparison. (メモリ比較の出力)"""
+    table_bytes, key_bytes, node_bytes, tail_bytes = measurement
+    dict_total = table_bytes + key_bytes
+    trie_total = node_bytes + tail_bytes
+    mib = lambda value: '%.2f MB' % (value / float(2 ** 20))
+    rows = [
+        ('builtin dict: hash table and values', mib(table_bytes)),
+        ('builtin dict: key strings', mib(key_bytes)),
+        ('builtin dict: total', mib(dict_total)),
+        ('pycedar: node array', mib(node_bytes)),
+        ('pycedar: tail array', mib(tail_bytes)),
+        ('pycedar: total', mib(trie_total)),
+        ('pycedar bytes per key', '%.1f' % (trie_total / float(len(keys)))),
+        ('ratio', '%.1fx smaller' % (dict_total / float(trie_total))),
+    ]
+    heading = 'memory for %d keys' % len(keys)
+    try:
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        print()
+        print(heading)
+        print('-' * len(heading))
+        for name, value in rows:
+            print('%-38s %14s' % (name, value))
+        return
+
+    table = Table(title=heading)
+    table.add_column('measurement')
+    table.add_column('size', justify='right')
+    for name, value in rows:
+        table.add_row(name, value)
+    Console().print(table)
+
+
 def report(label, keys, results):
     """Print the table, with rich when it is installed. (rich があれば表で出力)"""
     heading = 'pycedar %s -- %s, %d keys' % (pycedar.__version__, label, len(keys))
@@ -125,10 +190,14 @@ def main(argv=None):
                         help='random seed for key generation (default: %(default)s)')
     parser.add_argument('--label', default='run',
                         help='label shown in the report heading (default: %(default)s)')
+    parser.add_argument('--skip-memory', action='store_true',
+                        help='skip the memory comparison, which builds a second mapping')
     args = parser.parse_args(argv)
 
     keys, results = collect(args)
     report(args.label, keys, results)
+    if not args.skip_memory:
+        report_memory(keys, measure_memory(keys))
     return 0
 
 
