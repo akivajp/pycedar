@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-17
+
+### Changed
+
+- **Breaking**: a key containing a NUL byte now raises `ValueError`. cedar
+  keeps short key suffixes in a NUL terminated array, so such a key breaks that
+  invariant. It did not merely read back wrong: inserting one and then
+  inserting a key that shared its prefix corrupted memory and crashed the
+  interpreter with SIGSEGV, from pure Python input and with no unsafe API
+  involved. The check runs on the write paths only, where it costs one `memchr`
+  over the key, about 1 ns.
+- Operations on `str` keys are roughly twice as fast. Each call used to build a
+  temporary `bytes` object to hand cedar the key's UTF-8 form; measurement put
+  that at 62% of the cost of a `str` lookup, against a `bytes` trie that skips
+  it. The key's UTF-8 bytes are now borrowed through
+  `PyUnicode_AsUTF8AndSize()`, which for an ASCII string returns the string's
+  own storage with nothing copied, and for any other string returns the
+  representation CPython caches on the object.
+
+  Measured on 20000 random keys, CPython 3.13, nanoseconds per operation:
+
+  | operation | 0.3.1 | 0.4.0 | builtin `dict` |
+  | --- | ---: | ---: | ---: |
+  | `key in d` | 52 | 21 | — |
+  | `d[key]` | 61 | 28 | 12 |
+  | `d.get(key)` | 67 | 35 | — |
+  | `d[key] = value` | 61 | 27 | — |
+  | `d.set(key, value)` | 70 | 38 | — |
+  | `d.update(key, delta)` | 75 | 38 | — |
+  | `d.setdefault(key)` | 67 | 34 | — |
+  | `d.get_node(key)` | 99 | 65 | — |
+
+  A point lookup now costs roughly twice a `dict` lookup rather than five
+  times. Keys outside ASCII are converted once per string object rather than
+  once per call, since CPython caches the result on the object.
+
 ## [0.3.1] - 2026-09-16
 
 ### Changed
@@ -229,7 +265,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/akivajp/pycedar/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/akivajp/pycedar/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/akivajp/pycedar/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/akivajp/pycedar/compare/v0.2.1...v0.2.2
