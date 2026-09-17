@@ -3,8 +3,10 @@
 (``pycedar.dict`` の高水準 API に対するテスト)
 """
 
+import os
 import random
 import string
+import tempfile
 
 import pytest
 
@@ -540,3 +542,149 @@ def test_readme_example_still_behaves_as_documented(tmp_path):
         ('eighteen', 18), ('nineteen', 19), ('twenty', 20),
         ('twenty one', 21), ('twenty three', 23), ('twenty two', 22),
     ]
+
+
+def test_pop():
+    trie = pycedar.dict()
+    trie['apple'] = 1
+    trie['banana'] = 2
+
+    assert trie.pop('apple') == 1
+    assert 'apple' not in trie
+    # missing key without a default raises KeyError (既定値を省略した場合は KeyError)
+    with pytest.raises(KeyError):
+        trie.pop('apple')
+    # with a default it is returned instead (既定値を渡すとその値が返る)
+    assert trie.pop('apple', 'missing') == 'missing'
+    assert trie.pop('apple', None) is None
+    # a falsy default must not be confused with the omitted one
+    # (偽値のデフォルトは省略と混同されない)
+    assert trie.pop('apple', 0) == 0
+
+
+def test_popitem_returns_sorted_order_first():
+    trie = pycedar.dict()
+    trie['banana'] = 2
+    trie['apple'] = 1
+    trie['cherry'] = 3
+
+    assert trie.popitem() == ('apple', 1)
+    assert 'apple' not in trie
+    assert trie.popitem() == ('banana', 2)
+    assert trie.popitem() == ('cherry', 3)
+    assert len(trie) == 0
+    # empty trie raises KeyError (空のトライでは KeyError)
+    with pytest.raises(KeyError):
+        trie.popitem()
+
+
+def test_dumps_loads_roundtrip():
+    trie = pycedar.dict()
+    trie['apple'] = 1
+    trie['applet'] = 2
+    trie['中文'] = 3
+
+    image = trie.dumps()
+    other = pycedar.dict()
+    assert other.loads(image) == 0
+    assert dict(other.items()) == dict(trie.items())
+    # loads() replaces the whole contents (loads() は中身を丸ごと置き換える)
+    other.setdefault('eighteen', 18)
+    assert other.loads(image) == 0
+    assert list(other.items()) == [('apple', 1), ('applet', 2), ('中文', 3)]
+
+
+def test_dumps_loads_bytes_dict_and_empty_trie():
+    bytes_trie = pycedar.dict(bytes)
+    bytes_trie[b'cedar'] = 3
+    image = bytes_trie.dumps()
+
+    rebuilt = pycedar.dict(bytes)
+    assert rebuilt.loads(image) == 0
+    assert rebuilt[b'cedar'] == 3
+    assert rebuilt.type is bytes
+
+    empty = pycedar.dict()
+    image = empty.dumps()
+    rebuilt = pycedar.dict()
+    assert rebuilt.loads(image) == 0
+    assert len(rebuilt) == 0
+
+
+def test_dumps_matches_the_file_format():
+    trie = pycedar.dict()
+    trie['apple'] = 1
+
+    image = trie.dumps()
+    # The image loads through the file path, and a file saved by save() loads
+    # through loads(). (イメージは load() で読める。save() のファイルも loads() で
+    #  読める。両者は相互運用できる)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, 'test.dat')
+        with open(path, 'wb') as fp:
+            fp.write(image)
+        rebuilt = pycedar.dict()
+        assert rebuilt.load(path) == 0
+        assert rebuilt['apple'] == 1
+
+        with open(path, 'wb') as fp:
+            assert trie.save(path) == 0
+        rebuilt = pycedar.dict()
+        assert rebuilt.loads(open(path, 'rb').read()) == 0
+        assert rebuilt['apple'] == 1
+
+
+def test_loads_rejects_malformed_images():
+    trie = pycedar.dict()
+    trie['apple'] = 1
+    # a malformed image is rejected without touching the contents, unlike a
+    # failed load(), which leaves the trie empty
+    # (不正なイメージは中身に触れずに拒否される。load() と異なり中身は保持される)
+    assert trie.loads(b'') == -1
+    assert trie.loads(b'\x00\x00\x00\x00') == -1
+    assert trie['apple'] == 1
+    assert len(trie) == 1
+    # the instance keeps working afterwards (インスタンスはそのまま使える)
+    trie['after'] = 2
+    assert trie['after'] == 2
+
+
+def test_pickle_roundtrip():
+    import copy
+    import pickle
+
+    trie = pycedar.dict()
+    trie['apple'] = 1
+    trie['中文'] = 2
+
+    rebuilt = pickle.loads(pickle.dumps(trie))
+    assert rebuilt.type is str
+    assert dict(rebuilt.items()) == dict(trie.items())
+    # the rebuilt dict enforces the same key type (復元後も同じ型検査が働く)
+    with pytest.raises(TypeError):
+        rebuilt[b'bytes key'] = 3
+
+    bytes_trie = pycedar.dict(bytes)
+    bytes_trie[b'cedar'] = 3
+    rebuilt = pickle.loads(pickle.dumps(bytes_trie))
+    assert rebuilt.type is bytes
+    assert rebuilt[b'cedar'] == 3
+
+    # the low level tries pickle too (低水準のトライも pickle 化できる)
+    trie = pycedar.str_trie()
+    trie.set('apple', 1)
+    rebuilt = pickle.loads(pickle.dumps(trie))
+    assert rebuilt.exact_match_search('apple')[0] == 1
+
+
+def test_copy_independent_from_original():
+    import copy
+
+    trie = pycedar.dict()
+    trie['apple'] = 1
+
+    for shallow_or_deep in (copy.copy, copy.deepcopy):
+        clone = shallow_or_deep(trie)
+        assert clone['apple'] == 1
+        clone['apple'] = 9
+        assert trie['apple'] == 1

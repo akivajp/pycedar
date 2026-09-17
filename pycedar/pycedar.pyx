@@ -9,6 +9,7 @@ Python binding of cedar (implementation of efficiently-updatable double-array tr
 import sys
 
 # stl classes
+from libc.stdlib cimport free
 from libc.string cimport memchr
 from libcpp.vector cimport vector
 
@@ -41,6 +42,8 @@ cdef extern from "Python.h":
     bint PyBytes_Check(object o)
     char* PyBytes_AS_STRING(object o)
     Py_ssize_t PyBytes_GET_SIZE(object o)
+    object PyBytes_FromStringAndSize(const char* v, Py_ssize_t len)
+    int PyBytes_AsStringAndSize(object o, char** buf, Py_ssize_t* length) except -1
 
 ### sentinel values
 # C level mirrors of base_trie.NO_VALUE / NO_PATH. The class attributes stay as
@@ -49,6 +52,13 @@ cdef extern from "Python.h":
 # (公開APIはクラス属性のまま。内部の高頻度経路はこのC定数と比較する)
 cdef int _NO_VALUE = -1
 cdef int _NO_PATH  = -2
+
+### sentinel for dict.pop()'s omitted default
+# A distinct object, so that pop(key) (raise on missing) and pop(key, default)
+# can be told apart even when the caller passes None or a falsy default.
+# (pop(key) と pop(key, default) を区別するための専用オブジェクト。
+#  呼び出し側が None や偽値を渡しても判別できる)
+_POP_MISSING = object()
 
 ### compatible converters (bytes <-> {str,unicode})
 
@@ -165,6 +175,60 @@ cdef class base_trie:
 
     cpdef int save(self, str filepath, str mode = 'wb', bool shrink = True):
         return self.obj.save(str_to_bytes(filepath), str_to_bytes(mode), shrink)
+
+    cpdef bytes dumps(self, bool shrink=True):
+        """Serialize the trie image into bytes. (トライイメージを bytes に直列化する)
+
+        The layout is byte-for-byte what ``save()`` writes to a file, so
+        ``dumps()`` output can be written to a file and read back with
+        ``open()``/``load()``. The image stays platform-dependent (pointer size
+        and byte order) exactly like the file format, and carries no integrity
+        checks. A malformed image is reported by ``loads()`` returning ``-1``;
+        allocation failures raise ``MemoryError``.
+        (save() がファイルに書き出すのと同一レイアウトのため、dumps() の結果を
+         ファイルに書いて open()/load() で読み戻せる。プラットフォーム依存や
+         改竄検査の無さもファイル形式と同じ。不正な入力は loads() が -1 を返す。
+         確保失敗は MemoryError)
+        """
+        cdef char* buf = NULL
+        cdef size_t length = 0
+        # cedarpp.h allocates the image and hands ownership to us.
+        # (cedarpp.h 側で確保し、所有権を受け取る)
+        self.obj.save(&buf, &length, shrink)
+        try:
+            return PyBytes_FromStringAndSize(buf, <Py_ssize_t>length)
+        finally:
+            # The bytes object copies the contents, so the buffer can go now.
+            # (bytes オブジェクトが中身をコピーするため、バッファは直後に解放してよい)
+            free(buf)
+
+    cpdef int loads(self, bytes data):
+        """Replace the trie with a serialized image. (直列化イメージで中身を置き換える)
+
+        Accepts the bytes produced by ``dumps()`` (or ``save()``). Returns ``0``
+        on success and ``-1`` for malformed input, matching the ``save()`` /
+        ``load()`` convention. Unlike ``load()``, a malformed image is rejected
+        before the current contents are touched, so the trie keeps them and
+        stays reusable; only an allocation failure (raised as ``MemoryError``)
+        can leave it empty, as with ``load()``. The caller's buffer is copied,
+        so it may be released right after the call.
+        (dumps() または save() が生成した bytes を受け取る。save()/load() の慣習に
+         合わせ、成功時 0、不正入力時 -1 を返す。load() と異なり、不正なイメージは
+         現在の中身に触れる前に拒否されるため中身は保持される。MemoryError となり
+         うる確保失敗のみ、load() と同様にトライは空になる。バッファはコピーされる
+         ため、呼び出し後すぐ解放してよい)
+        """
+        cdef char* buf = NULL
+        cdef Py_ssize_t length = 0
+        PyBytes_AsStringAndSize(data, &buf, &length)
+        return self.obj.open(buf, <size_t>length)
+
+    def __reduce__(self):
+        # Pickle through the serialized image, passing the class explicitly so
+        # that the specialized subclasses round trip as themselves.
+        # (直列化イメージ経由で pickle 化する。特殊化クラスがそのまま復元されるよう
+        #  クラスオブジェクトを明示的に渡す)
+        return (_trie_from_image, (self.__class__, self.dumps()))
 
     ### type dependent operations (型に依存する操作)
     # Declared here purely so that calls dispatch through the vtable. The shared
@@ -567,6 +631,31 @@ cdef class node:
         return repr(self.key())
 
 
+### unpickling factories
+# Referenced by __reduce__ above. Kept as module-level functions because pickle
+# stores the callable itself, which for a cdef class would embed the class in
+# the pickle by value semantics Cython does not provide.
+# (__reduce__ から参照される。cdef クラスでは実現できない値渡しセマンティクスに
+#  なるのを避けるため、モジュールレベル関数として置く)
+
+def _trie_from_image(type cls, bytes image):
+    """Rebuild a trie from a serialized image (pickle support).
+    (直列化イメージからトライを復元する。pickle 対応用)"""
+    t = cls()
+    if t.loads(image) < 0:
+        raise ValueError("invalid pycedar image data")
+    return t
+
+
+def _dict_from_image(type key_type, bytes image):
+    """Rebuild a pycedar.dict from a serialized image (pickle support).
+    (直列化イメージから pycedar.dict を復元する。pickle 対応用)"""
+    d = dict(key_type)
+    if d.loads(image) < 0:
+        raise ValueError("invalid pycedar image data")
+    return d
+
+
 cdef class dict:
     """
     python dict-like class
@@ -698,6 +787,22 @@ cdef class dict:
         """
         return self.trie.save(filepath, mode, shrink)
 
+    cpdef bytes dumps(self, bool shrink=True):
+        """
+        serialize the trie image into bytes (see pycedar.base_trie.dumps)
+        :param shrink: shrinking flat
+        :return: bytes object holding the serialized trie image
+        """
+        return self.trie.dumps(shrink)
+
+    cpdef int loads(self, bytes data):
+        """
+        replace the trie with a serialized image (see pycedar.base_trie.loads)
+        :param data: bytes produced by dumps() or save()
+        :return: 0 on success, -1 on malformed input (the trie is left empty)
+        """
+        return self.trie.loads(data)
+
     cpdef int set(self, object key, int value) except *:
         """
         set value associating with `key` string
@@ -727,6 +832,48 @@ cdef class dict:
         :return: updated int value associating with `key` string
         """
         return self.trie.update(key, delta)
+
+    cpdef object pop(self, object key, object default=_POP_MISSING):
+        """
+        remove `key` and return its value, like dict.pop
+        :param key: key string
+        :param default: value returned when `key` is not found; when omitted,
+                        a missing key raises KeyError
+        :return: the value `key` carried, or `default`
+        """
+        cdef int value = self.trie.exact_match_search(key)[0]
+        if value == _NO_VALUE or value == _NO_PATH:
+            if default is _POP_MISSING:
+                raise KeyError(key)
+            return default
+        # The lookup above found the key, so the erase cannot fail; the check
+        # stays as a backstop against a malformed trie image.
+        # (直前の検索で見つかっているため失敗はありえないが、不正なイメージ対策の
+        #  保険として残す)
+        if self.trie.erase(key) < 0:
+            raise KeyError(key)
+        return value
+
+    cpdef tuple popitem(self):
+        """
+        remove and return the first (key, value) pair in the trie's enumeration
+        order, which is sorted-key order. Note this differs from dict.popitem,
+        which pops the most recently inserted item: a trie keeps no insertion
+        order, so the lexicographically smallest remaining key is returned.
+        (列挙順 = ソート順で最初の (キー, 値) を取り除いて返す。トライは挿入順を
+         保持しないため、dict.popitem と異なり辞書順で最小の残存キーが返る)
+        :return: tuple of (key string, int value)
+        """
+        cdef int value
+        cdef npos_t node_id
+        cdef size_t length
+        value, node_id, length = self.trie.begin(0, 0)
+        if value == _NO_PATH:
+            raise KeyError("'popitem(): dictionary is empty'")
+        key = self.trie.suffix(node_id, length)
+        if self.trie.erase(key) < 0:
+            raise KeyError(key)
+        return key, value
 
     cpdef values(self):
         """
@@ -759,3 +906,10 @@ cdef class dict:
 
     def __setitem__(self, key, int value):
         self.trie.set(key, value)
+
+    def __reduce__(self):
+        # Pickle through the serialized image, carrying the key type so that
+        # the rebuilt dict enforces the same key type.
+        # (直列化イメージ経由で pickle 化する。キー型も渡し、復元後に同じ型検査が
+        #  働くようにする)
+        return (_dict_from_image, (self.type, self.dumps()))

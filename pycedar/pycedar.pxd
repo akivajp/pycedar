@@ -40,6 +40,15 @@ cdef extern from "cedarpp.h" namespace "cedar":
 
         int open (const char* fn, const char* mode, const size_t offset, size_t size_) except +
 
+        # pycedar additions: memory-backed serialization (vendored cedarpp.h only).
+        # save() allocates the image via malloc and hands ownership to the caller;
+        # open() copies the image, so the caller's buffer may be released right away.
+        # (メモリ上へのシリアライズ。save() は malloc で確保し所有権を呼び出し側へ渡す。
+        #  open() はコピーを取るため呼び出し側のバッファはすぐ解放してよい)
+        int save (char** buf_, size_t* len_, const bool shrink) except +
+
+        int open (const char* buf, const size_t buf_len) except +
+
         void restore () except +
 
         int begin (npos_t& from_, size_t& len) except +

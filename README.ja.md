@@ -56,6 +56,12 @@ $ pip install --user pycedar
 $ pip install --user https://github.com/akivajp/pycedar/archive/master.zip
 ```
 
+## 型検査
+
+型スタブは ``pycedar-stubs`` パッケージ (PEP 561) として同梱されています。
+pycedar をインストールすれば型検査器や IDE が自動で API を認識するため、
+追加の設定は不要です。
+
 ## 使い方
 
 ### ダブル配列トライに基づく dict ライクなクラスを使う
@@ -160,6 +166,32 @@ True
 [('eighteen', 18), ('nineteen', 19), ('twenty', 20), ('twenty one', 21), ('twenty three', 23), ('twenty two', 22)]
 ```
 
+トライ像はメモリ上の ``bytes`` として扱うこともでき、pickle やコピーにも対応しています:
+
+```python
+>>> import pickle, copy
+
+>>> image = d.dumps()
+>>> restored = pickle.loads(pickle.dumps(d))
+>>> restored['twenty']
+20
+>>> clone = copy.deepcopy(d)             # copy.copy も同様に動く
+>>> clone['twenty'] = 999
+>>> d['twenty']
+20
+
+>>> d.pop('twenty two')                  # dict.pop と同様
+22
+>>> d.pop('twenty two', 'gone')
+'gone'
+>>> d.popitem()                          # ソート順で最初のキーを取り除く
+('nineteen', 19)
+```
+
+``popitem()`` は残存キーのうち辞書順で最小のものを返します。トライは挿入順を
+保持しないためで、ここが ``pycedar.dict`` が ``dict`` と意図的に異なる唯一の
+点です。
+
 ### bytes をキーにする
 
 ``pycedar.dict`` はキーの型でパラメータ化されており、型は厳密に検査されます。
@@ -245,6 +277,8 @@ applet 2
 | ``next(node_id, length, root=0)`` | 列挙を進める。``(値, ノードID, 長さ)`` を返す。 |
 | ``open(filepath, mode='rb', offset=0, size=0)`` | トライ像を読み込む。成功で ``0``、失敗で ``-1``。 |
 | ``save(filepath, mode='wb', shrink=True)`` | トライ像を書き出す。成功で ``0``、失敗で ``-1``。 |
+| ``dumps(shrink=True)`` | トライ像を ``bytes`` として返す。``save()`` が書き出すものとバイト単位で同一レイアウトのため、相互運用できる。 |
+| ``loads(data)`` | ``bytes`` のトライ像で中身を置き換える。``0`` / ``-1`` を返す。失敗した ``load()`` と異なり、不正な入力は現在の中身に触れる前に拒否されるため、中身は保持される。 |
 
 ### ``pycedar.str_trie`` / ``pycedar.bytes_trie`` / ``pycedar.unicode_trie``
 
@@ -298,6 +332,8 @@ applet 2
 | ``get(key, default=NO_VALUE)`` | 値、または ``default``。 |
 | ``set(key, value)`` | キーを登録する。格納した値を返す。 |
 | ``setdefault(key, value=0)`` | 未登録のときだけ登録する。実際の値を返す。 |
+| ``pop(key, default=…)`` | ``key`` を取り除いて値を返す。``default`` を省略して未登録の場合は ``KeyError``。 |
+| ``popitem()`` | ソート順で最初の ``(キー, 値)`` を取り除いて返す。空なら ``KeyError``。``dict.popitem()`` は最後に挿入した要素を返すのに対し、トライは挿入順を保持しないためここだけ挙動が異なる。 |
 | ``update(key, delta=0)`` | キーの値に ``delta`` を加算する。未登録なら登録する。 |
 | ``clear()`` | 全キーを破棄する。 |
 | ``keys()``, ``values()``, ``items()``, ``nodes()`` | トライ全体に対するジェネレータ。 |
@@ -305,6 +341,11 @@ applet 2
 | ``get_node(key)`` | ``key`` に対応する ``node``、または ``None``。 |
 | ``save(filepath, mode='wb', shrink=True)`` | トライ像を書き出す。``0`` / ``-1`` を返す。 |
 | ``load(filepath, mode='rb')`` | 保存済みのトライ像で置き換える。``0`` / ``-1`` を返す。 |
+| ``dumps(shrink=True)`` | トライ像を ``bytes`` として返す。``save()`` のファイルと相互運用できる。 |
+| ``loads(data)`` | ``dumps()``/``save()`` が生成した ``bytes`` のトライ像で置き換える。``0`` / ``-1`` を返す。 |
+
+``pycedar.dict`` (およびトライクラス) は、同じ直列化イメージを経由して
+``pickle``、``copy.copy()``、``copy.deepcopy()`` に対応しています。
 
 ``pycedar.__version__`` でインストール済みパッケージのバージョンを取得できます。
 
@@ -370,6 +411,10 @@ cedar ネイティブの ``.dat`` 形式は、書き出したマシンのポイ�
 オーダーに依存し、完全性の検証機構を一切持ちません。互換性のあるプラット
 フォーム上で pycedar が生成した、信頼できる入手元のファイルのみを読み込んで
 ください。
+
+同一レイアウトを使用する ``dumps()`` / ``loads()`` や、``pickle`` も同様です。
+pickle 化はこのトライ像を直列化するため、pickle は同一プラットフォーム間での
+み移植可能で、完全性は検証されません。
 
 ### I/O の失敗は戻り値で通知される
 

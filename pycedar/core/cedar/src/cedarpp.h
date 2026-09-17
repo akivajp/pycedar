@@ -452,6 +452,65 @@ namespace cedar {
 #endif
       return 0;
     }
+    // pycedar additions: memory-backed serialization, so that the Python layer
+    // can offer dumps()/loads() and pickle support without touching a file.
+    // The image layout is byte-for-byte what save(fn) writes -- the tail array
+    // (whose first int stores its own length) followed by the node array -- so
+    // the bytes produced here and the files produced by save() are
+    // interchangeable, and remain platform-dependent in the same way.
+    // (メモリ上へのシリアライズ。save() が書き出すのと同一レイアウトなので
+    //  save()/open() と相互運用できる。プラットフォーム依存性も同じ)
+    int save (char** buf_, size_t* len_, const bool shrink) {
+      if (shrink) shrink_tail ();
+      const size_t len
+        = static_cast <size_t> (*_length) + sizeof (node) * static_cast <size_t> (_size);
+      char* const buf = static_cast <char*> (std::malloc (len));
+      if (! buf) throw std::bad_alloc ();
+      std::memcpy (buf, _tail, static_cast <size_t> (*_length));
+      std::memcpy (buf + *_length, _array, sizeof (node) * static_cast <size_t> (_size));
+      *buf_ = buf;
+      *len_ = len;
+      return 0;
+    }
+    int open (const char* buf, const size_t buf_len) {
+      // The image starts with the tail's own length, and the rest must be a
+      // whole number of nodes; anything else is rejected without touching the
+      // trie's current contents.
+      // (先頭は tail 自身の長さ、残部は node サイズの整数倍。不正な入力は
+      //  現在の中身に触れる前に拒否する)
+      if (buf_len < sizeof (int)) return -1;
+      int len;
+      std::memcpy (&len, buf, sizeof (int));
+      const size_t length_ = static_cast <size_t> (len);
+      // The stored length covers its own four bytes, so the array starts at
+      // buf + length_ and buf_len <= length_ means no array at all.
+      // (格納された長さは自身の4バイトを含む。buf + length_ からが配列部で、
+      //  buf_len <= length_ なら配列部が存在しない)
+      if (len < static_cast <int> (sizeof (int)) || buf_len <= length_) return -1;
+      const size_t array_bytes = buf_len - length_;
+      if (array_bytes % sizeof (node) != 0) return -1;
+      const size_t size_ = array_bytes / sizeof (node);
+      // set array
+      clear (false);
+      _array = static_cast <node*>  (std::malloc (sizeof (node)  * size_));
+      _tail  = static_cast <char*>  (std::malloc (length_));
+      _tail0 = static_cast <int*>   (std::malloc (sizeof (int)));
+      if (! _array || ! _tail || ! _tail0)
+        { // pycedar: mirror the file open() failure path: clear (false) above
+          // already dropped the previous contents, so reset to a valid empty
+          // trie before reporting the failure.
+          // (ファイル版 open() の失敗経路と同じ。直前の clear(false) で中身は
+          //  消えているため、有効な空トライに戻してから失敗を報告する)
+          clear (true);
+          throw std::bad_alloc ();
+        }
+      std::memcpy (_tail,  buf,            length_);
+      std::memcpy (_array, buf + length_,  array_bytes);
+      _size = static_cast <int> (size_);
+      *_length0 = 0;
+      restore ();
+      return 0;
+    }
 #ifndef USE_FAST_LOAD
     void restore () { // restore information to update
       if (! _block) _restore_block ();

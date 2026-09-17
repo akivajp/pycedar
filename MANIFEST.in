@@ -4,6 +4,7 @@ include CHANGELOG.md
 include pycedar/VERSION
 include pycedar/pycedar.pxd
 include pycedar/pycedar.pyx
+recursive-include pycedar-stubs *.pyi
 include pycedar/core/cedar/README.md
 include pycedar/core/cedar/AUTHORS
 include pycedar/core/cedar/BSD

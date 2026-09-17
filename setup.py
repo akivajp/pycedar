@@ -52,7 +52,12 @@ setup(
     version=version,
     cmdclass={'build_ext': build_ext},
     ext_modules=cythonize(extensions, compiler_directives={'language_level': 3}),
-    packages=['pycedar'],
+    # The extension itself is a top-level module (pycedar.<abi>.so), so its
+    # type stubs ship as the PEP 561 stub-only package pycedar-stubs, which
+    # installers place beside it and type checkers pick up automatically.
+    # (拡張本体はトップレベルモジュールのため、型スタブは PEP 561 の
+    #  stub-only パッケージ pycedar-stubs として同梱する)
+    packages=['pycedar', 'pycedar-stubs'],
     package_data={
         'pycedar': [
             '*.pyx',
@@ -66,6 +71,7 @@ setup(
             'core/cedar/THANKS',
             'core/cedar/src/cedarpp.h',
         ],
+        'pycedar-stubs': ['__init__.pyi'],
     },
     license_files=[
         'pycedar/core/cedar/BSD',
@@ -96,5 +102,6 @@ setup(
         'Programming Language :: Python :: 3.14',
         'Operating System :: POSIX',
         'Topic :: Utilities',
+        'Typing :: Typed',
     ],
 )

@@ -57,6 +57,13 @@ $ pip install --user pycedar
 $ pip install --user https://github.com/akivajp/pycedar/archive/master.zip
 ```
 
+## Type checking
+
+Type stubs ship as the ``pycedar-stubs`` package (PEP 561). Type checkers and
+IDEs pick them up automatically once pycedar is installed — no extra step.
+(型スタブは ``pycedar-stubs`` パッケージとして同梱されるため、インストール後は
+ 型検査器や IDE が自動で API を認識する)
+
 ## Usage
 
 ### using python-like dict class based on double array trie
@@ -161,6 +168,33 @@ Saving and loading:
 [('eighteen', 18), ('nineteen', 19), ('twenty', 20), ('twenty one', 21), ('twenty three', 23), ('twenty two', 22)]
 ```
 
+The image can also be kept in memory as ``bytes``, and the dict supports
+pickling and copying:
+
+```python
+>>> import pickle, copy
+
+>>> image = d.dumps()
+>>> restored = pickle.loads(pickle.dumps(d))
+>>> restored['twenty']
+20
+>>> clone = copy.deepcopy(d)             # copy.copy works the same way
+>>> clone['twenty'] = 999
+>>> d['twenty']
+20
+
+>>> d.pop('twenty two')                  # like dict.pop
+22
+>>> d.pop('twenty two', 'gone')
+'gone'
+>>> d.popitem()                          # removes the first key in sorted order
+('nineteen', 19)
+```
+
+``popitem()`` returns the lexicographically smallest remaining key, because a
+trie keeps no insertion order — this is the one place ``pycedar.dict``
+intentionally differs from ``dict``.
+
 ### using bytes keys
 
 ``pycedar.dict`` is parameterised by its key type, which is enforced strictly:
@@ -248,6 +282,8 @@ Base class for every trie. Not meant to be instantiated directly.
 | ``next(node_id, length, root=0)`` | Advance an enumeration. Returns ``(value, node_id, length)``. |
 | ``open(filepath, mode='rb', offset=0, size=0)`` | Load a trie image. Returns ``0`` on success, ``-1`` on failure. |
 | ``save(filepath, mode='wb', shrink=True)`` | Write a trie image. Returns ``0`` on success, ``-1`` on failure. |
+| ``dumps(shrink=True)`` | The trie image as ``bytes``. The layout is byte-for-byte what ``save()`` writes, so the two are interchangeable. |
+| ``loads(data)`` | Replace the trie with a ``bytes`` image. Returns ``0`` / ``-1``. Unlike a failed ``load()``, malformed input is rejected before the current contents are touched, so the trie keeps them. |
 
 ### ``pycedar.str_trie`` / ``pycedar.bytes_trie`` / ``pycedar.unicode_trie``
 
@@ -302,6 +338,8 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 | ``get(key, default=NO_VALUE)`` | The value, or ``default``. |
 | ``set(key, value)`` | Register a key. Returns the stored value. |
 | ``setdefault(key, value=0)`` | Register only if absent. Returns the effective value. |
+| ``pop(key, default=…)`` | Remove ``key`` and return its value; raises ``KeyError`` without a default when absent. |
+| ``popitem()`` | Remove and return the first ``(key, value)`` in sorted-key order. ``KeyError`` when empty. Unlike ``dict.popitem()``, which pops the most recent insertion — a trie keeps no insertion order. |
 | ``update(key, delta=0)`` | Add ``delta`` to a key's value, registering it if needed. |
 | ``clear()`` | Drop all keys. |
 | ``keys()``, ``values()``, ``items()``, ``nodes()`` | Generators over the whole trie. |
@@ -309,6 +347,11 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 | ``get_node(key)`` | The ``node`` for ``key``, or ``None``. |
 | ``save(filepath, mode='wb', shrink=True)`` | Write a trie image. Returns ``0`` / ``-1``. |
 | ``load(filepath, mode='rb')`` | Replace the trie with a stored image. Returns ``0`` / ``-1``. |
+| ``dumps(shrink=True)`` | The trie image as ``bytes``; interchangeable with ``save()`` files. |
+| ``loads(data)`` | Replace the trie with a ``bytes`` image from ``dumps()``/``save()``. Returns ``0`` / ``-1``. |
+
+``pycedar.dict`` (and the trie classes) support ``pickle``, ``copy.copy()`` and
+``copy.deepcopy()`` through the same serialized image.
 
 ``pycedar.__version__`` exposes the installed package version.
 
@@ -375,6 +418,12 @@ The native cedar ``.dat`` format depends on the pointer size and byte order of
 the machine that wrote it, and it carries no integrity checks. Only load files
 produced by pycedar on a compatible platform and obtained from a trusted
 source.
+
+The same applies to ``dumps()`` / ``loads()``, which use the identical layout,
+and to ``pickle`` — pickling serializes this image, so pickles are only
+portable between machines of the same platform and integrity is not verified.
+(シリアライズはプラットフォーム依存かつ改竄検査なし。``dumps()``/``loads()`` や
+ ``pickle`` も同一レイアウトを使用するため同様)
 
 ### I/O failures are reported through return codes
 

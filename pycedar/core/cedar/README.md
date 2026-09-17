@@ -47,6 +47,7 @@ Python one.
 | `open()`: every early `return -1` closes the file first | Upstream leaks the `FILE*` on all nine of those paths. A loop of failed loads exhausts the descriptor table: 200 failed loads leaked exactly 200 descriptors before the fix. |
 | `_consult()` synced with upstream revision 1916 (2017-07-12) | Upstream bug fix, applied in [#2](https://github.com/akivajp/pycedar/pull/2). |
 | `clear()` layout and the `STATIC_ASSERT` pragmas taken from upstream | Pure formatting, adopted to remove the compiler warnings this copy used to emit. Reduces the delta against upstream rather than adding to it. |
+| `save(char** buf, size_t* len, bool shrink)` and `open(const char* buf, size_t buf_len)` added (not upstream methods) | Memory-backed serialization for pycedar's `dumps()` / `loads()` and pickle support, so that no temp file is involved. The image layout is byte-for-byte what the file-based `save()` writes, so the two forms are interchangeable. The memory `open()` copies the buffer, so the trie owns its memory and the caller may release the original immediately; its failure paths mirror the file-based `open()` (malformed input returns `-1` before touching the contents, a failed allocation resets to a valid empty trie and throws `std::bad_alloc`). |
 
 The original lines are kept as comments next to the replacements, so the delta
 against upstream stays readable.
