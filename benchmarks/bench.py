@@ -174,7 +174,8 @@ def report(label, keys, results):
     table.add_column('operation')
     table.add_column('ns/op', justify='right')
     for name, nanoseconds in results:
-        table.add_row(name, '%.0f' % nanoseconds)
+        # rich は [..] をスタイルマークアップとして解釈するためエスケープする
+        table.add_row(name.replace('[', '\\['), '%.0f' % nanoseconds)
     Console().print(table)
 
 
