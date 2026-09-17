@@ -423,6 +423,17 @@ cdef (int, size_t, npos_t) exact_match_search(base_trie trie, const char* key, s
     result = trie.obj.exactMatchSearch[da[int].result_triple_type](key, keylen, from_id)
     return result.value, result.length, result.id
 
+cdef int exact_match_value(base_trie trie, const char* key, size_t keylen):
+    """Point lookup returning the value alone, via cedar's ``T=int``
+    specialization of ``exactMatchSearch``. The dict facade's get / in / [] /
+    pop / setdefault need only the value, so building the
+    ``(value, length, node_id)`` triple and boxing the length and node id
+    would be pure overhead on the hottest path.
+    (値のみを返すポイントルックアップ。dict ファサードの get / in / [] / pop /
+     setdefault は値だけでよく、ホットな経路で三組の構築や長さ・ノードIDの
+     ボックス化は不要なコストになる)"""
+    return trie.obj.exactMatchSearch[int](key, keylen, 0)
+
 cdef inline void reject_embedded_nul(const char* key, size_t keylen) except *:
     """Refuse a key containing a NUL byte. (NUL バイトを含むキーを拒否する)
 
@@ -877,6 +888,18 @@ cdef class dict:
         for value, node_id, length in self.root.traverse(key):
             yield value
 
+    cdef int _value(self, object key):
+        """Look up ``key``'s value without building the search triple.
+
+        Private (cdef, invisible to Python): the public
+        ``exact_match_search()`` stays the way to get length and node id.
+        (三組を組み立てず値のみ引く内部ヘルパー。長さやノードIDが要る場合は
+         公開の exact_match_search() を使う)
+        """
+        cdef Py_ssize_t keylen
+        cdef const char* buf = _borrow_key(self.trie, key, &keylen)
+        return exact_match_value(self.trie, buf, <size_t>keylen)
+
     cpdef object get(self, object key, object default=base_trie.NO_VALUE):
         """
         get int value associated with `key` string
@@ -885,7 +908,7 @@ cdef class dict:
         :return: if `key` string is found, return its associated int value, otherwise `default`
         """
         cdef int value
-        value = self.trie.exact_match_search(key)[0]
+        value = self._value(key)
         if value == _NO_VALUE or value == _NO_PATH:
             return default
         return value
@@ -966,7 +989,7 @@ cdef class dict:
         :return: if `key` string is not found, return new int value, otherwise existing int value
         """
         cdef int result
-        result = self.trie.exact_match_search(key)[0]
+        result = self._value(key)
         if result == _NO_VALUE or result == _NO_PATH:
             result = self.set(key, value)
         return result
@@ -988,7 +1011,7 @@ cdef class dict:
                         a missing key raises KeyError
         :return: the value `key` carried, or `default`
         """
-        cdef int value = self.trie.exact_match_search(key)[0]
+        cdef int value = self._value(key)
         if value == _NO_VALUE or value == _NO_PATH:
             if default is _POP_MISSING:
                 raise KeyError(key)
@@ -1032,7 +1055,7 @@ cdef class dict:
         return self.trie.num_keys()
 
     def __contains__(self, key):
-        cdef int value = self.trie.exact_match_search(key)[0]
+        cdef int value = self._value(key)
         if value == _NO_VALUE or value == _NO_PATH:
             return False
         return True
@@ -1046,7 +1069,7 @@ cdef class dict:
 
     def __getitem__(self, key):
         cdef int value
-        value = self.trie.exact_match_search(key)[0]
+        value = self._value(key)
         if value == _NO_VALUE or value == _NO_PATH:
             raise KeyError(key)
         return value
