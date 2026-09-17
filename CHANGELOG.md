@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Point lookups on ``pycedar.dict`` (``get``, ``setdefault``, ``pop``,
+  ``__contains__``, ``__getitem__``) no longer build cedar's
+  ``(value, length, node_id)`` search result; they read the value through the
+  ``exactMatchSearch<int>`` specialization instead, which is slightly faster
+  (about 3 ns on ``key in d`` in the project benchmarks) and allocates less.
+
+### Fixed
+
+- ``benchmarks/bench.py`` escaped ``[`` in row names so rich no longer
+  swallowed labels like ``d[key]`` as style markup.
+
 ## [0.6.0] - 2026-09-18
 
 ### Added

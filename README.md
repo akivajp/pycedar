@@ -39,8 +39,9 @@ measured with `benchmarks/bench.py` on CPython 3.13 (Linux, x86_64):
 | **total** | **23.16 MB** | **4.40 MB** |
 | per key | 121 bytes | 23 bytes |
 
-The trade is real and worth stating plainly: a point lookup costs roughly five
-times what a `dict` lookup does (61 ns against 12 ns on the same data). Reach
+The trade is real and worth stating plainly: a point lookup costs roughly twice
+what a `dict` lookup does (30 ns against 16 ns on the same data; the numbers
+vary by machine). Reach
 for pycedar when the key set is large enough that memory matters, or when you
 need prefix search; reach for a `dict` when you only need point lookups.
 
