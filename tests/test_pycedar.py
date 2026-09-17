@@ -688,3 +688,120 @@ def test_copy_independent_from_original():
         assert clone['apple'] == 1
         clone['apple'] = 9
         assert trie['apple'] == 1
+
+
+def test_stub_covers_public_api():
+    """The stub must keep up with the runtime API.
+    (スタブが実装の公開APIから取り残されないことを保証する)"""
+    import re
+    from pathlib import Path
+
+    stub_path = Path(__file__).resolve().parent.parent / 'pycedar-stubs' / '__init__.pyi'
+    if not stub_path.is_file():
+        # Not available when running against an installed wheel without stubs.
+        pytest.skip('pycedar-stubs is not available in this checkout')
+
+    stub = stub_path.read_text(encoding='utf-8')
+    blocks = _split_stub_blocks(stub)
+
+    # Curated module-level names; the module namespace also leaks import
+    # artifacts (sys, PackageNotFoundError) that are not API.
+    # (モジュールレベルの名前。モジュール名前空間には import の副産物が
+    #  露出しているが API ではない)
+    for name in ('dict', 'base_trie', 'str_trie', 'bytes_trie', 'unicode_trie', 'node'):
+        assert name in blocks, 'class %s is missing from the stub' % name
+    assert '__version__: str' in stub, '__version__ is missing from the stub'
+
+    # Names that are readable at runtime but are deliberately not documented
+    # API, so the stub leaves them out.
+    # (実行時には読めるが文書化済みAPIではないため、スタブから意図的に除外)
+    skips = {
+        # implementation detail exposed by Cython's readonly declaration
+        # (Cython の readonly 宣言により露出している内部実装)
+        ('dict', 'fallback_cast'),
+    }
+    documented_dunders = {
+        'dict': {'__len__', '__contains__', '__iter__', '__getitem__',
+                 '__setitem__', '__delitem__', '__reduce__'},
+        'base_trie': {'__reduce__'},
+        'str_trie': {'__reduce__'},
+        'bytes_trie': '__reduce__',
+        'unicode_trie': {'__reduce__'},
+        'node': {'__repr__', '__str__'},
+    }
+    documented_dunders['bytes_trie'] = {'__reduce__'}
+
+    for cls_name, cls in (
+        ('dict', pycedar.dict),
+        ('base_trie', pycedar.base_trie),
+        ('str_trie', pycedar.str_trie),
+        ('bytes_trie', pycedar.bytes_trie),
+        ('unicode_trie', pycedar.unicode_trie),
+        ('node', pycedar.node),
+    ):
+        expected = {name for name in dir(cls) if not name.startswith('_')}
+        expected |= {d for d in documented_dunders.get(cls_name, set()) if hasattr(cls, d)}
+        expected -= {name for cls_key, name in skips if cls_key == cls_name}
+        # Subclasses inherit from base_trie; members declared only on the base
+        # class's stub block count as covered.
+        # (サブクラスは base_trie を継承する。基底クラスのブロックに宣言が
+        #  あるメンバはカバー扱いにする)
+        search_text = blocks.get(cls_name, '')
+        if cls_name in ('str_trie', 'bytes_trie', 'unicode_trie'):
+            search_text += blocks.get('base_trie', '')
+        missing = sorted(
+            name for name in expected
+            if not re.search(r'\b%s\b\s*[:=(]' % re.escape(name), search_text)
+        )
+        assert not missing, (
+            'the stub does not cover %s of pycedar.%s; update pycedar-stubs/__init__.pyi'
+            % (missing, cls_name)
+        )
+
+
+def _split_stub_blocks(stub_text):
+    """Split the stub into {class name: block text}. (スタブをクラスごとのブロックに分割する)"""
+    import re
+    parts = re.split(r'(?m)^class (\w+)', stub_text)
+    return {parts[i]: parts[i + 1] for i in range(1, len(parts), 2)}
+
+
+def test_concurrent_tries_are_independent():
+    """Smoke test for free-threaded builds: concurrent workers, each on its own
+    trie, must not interfere. Under the GIL this only passes trivially; on a
+    free-threaded interpreter it exercises real parallelism.
+    (フリースレッド版向けスモークテスト。別々のトライを並行操作しても互いに
+     干渉しないこと。GIL 版では自明に通るが、フリースレッド版では実並行を
+     行使する)"""
+    import threading
+
+    def worker(index, results):
+        d = pycedar.dict()
+        for i in range(500):
+            key = 'k%d' % ((i + index) % 250)
+            d[key] = i
+            # reads must observe the writes made on this same trie
+            # (同一トライへの書き込みが読み出しから観測できること)
+            if d.get(key) != i:
+                results.append((index, 'read mismatch', key))
+                return
+            if i % 50 == 0:
+                d.pop(key)
+                if key in d:
+                    results.append((index, 'pop failed', key))
+                    return
+        results.append((index, None, None))
+
+    # d[key] stores a C int; values above 255 exercise real int storage
+    d = pycedar.dict()
+    d['probe'] = 257
+    assert d['probe'] == 257
+
+    results = []
+    threads = [threading.Thread(target=worker, args=(i, results)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    failures = [(i, reason) for i, reason, _ in results if reason is not None]
+    assert not failures, failures

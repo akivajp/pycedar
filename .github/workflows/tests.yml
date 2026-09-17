@@ -22,6 +22,15 @@ jobs:
           # (Apple silicon ランナーには 3.9 が無いため Linux 側で担保する)
           - os: macos-latest
             python-version: "3.9"
+        include:
+          # The extension is declared free-threading compatible; validate it
+          # without the GIL too. cibuildwheel 4.x dropped 3.13t, so only 3.14t.
+          # (拡張はフリースレッド対応を宣言しているため GIL 無しでも検証する。
+          #  cibuildwheel 4.x が 3.13t を廃止したため 3.14t のみ)
+          - os: ubuntu-latest
+            python-version: "3.14t"
+          - os: macos-latest
+            python-version: "3.14t"
 
     steps:
       - uses: actions/checkout@v7

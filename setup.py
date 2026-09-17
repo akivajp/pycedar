@@ -47,11 +47,25 @@ extensions = [
 version = (BASE_PATH / MAIN_PACKAGE / 'VERSION').read_text(encoding='utf-8').strip()
 long_description = (BASE_PATH / 'README.md').read_text(encoding='utf-8')
 
+# The module holds no global mutable Python state and every Python object it
+# touches is managed by Cython's reference counting, so it is safe to declare
+# as free-threading compatible (PEP 703). This only tells a free-threaded
+# interpreter that the module does not require the GIL; under a GIL build the
+# directive changes nothing. Concurrent operations on the *same* trie were
+# never thread-safe (cedar mutates its arrays in place) and remain so.
+# (モジュールはグローバルな可変状態を持たず、Python オブジェクトは Cython の
+#  参照カウントで管理されるため、フリースレッド対応として宣言する。GIL 版での
+#  挙動は不変。同一トライへの並行操作は従来どおりスレッドセーフではない)
+compiler_directives = {
+    'language_level': 3,
+    'freethreading_compatible': True,
+}
+
 setup(
     name='pycedar',
     version=version,
     cmdclass={'build_ext': build_ext},
-    ext_modules=cythonize(extensions, compiler_directives={'language_level': 3}),
+    ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
     # The extension itself is a top-level module (pycedar.<abi>.so), so its
     # type stubs ship as the PEP 561 stub-only package pycedar-stubs, which
     # installers place beside it and type checkers pick up automatically.

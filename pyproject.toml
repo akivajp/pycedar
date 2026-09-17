@@ -6,12 +6,17 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [tool.cibuildwheel]
-# Only the interpreters that the test matrix actually covers.
-# Free-threaded builds (cp3XXt-*) are deliberately excluded: they do not match
-# these patterns, and the extension has not been validated without the GIL.
-# (テスト済みのインタプリタのみを対象にする。
-#  フリースレッド版はGIL無しでの検証が済んでいないため意図的に対象外)
-build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+# Only the interpreters that the test matrix actually covers, including the
+# free-threaded build of Python 3.14 (cp314t-*): the extension is declared
+# free-threading compatible (see setup.py) and cibuildwheel runs the test
+# suite on every wheel it builds, so the 3.14t wheel is validated without the
+# GIL. Python 3.13t is not in the list because cibuildwheel 4.x dropped it
+# (its ABI was experimental and changed again in 3.14).
+# (テストマトリクスが実際にカバーするインタプリタのみ。Python 3.14 の
+#  フリースレッド版 (cp314t-*) を含む。モジュールはフリースレッド対応を宣言し
+#  (setup.py 参照)、cibuildwheel は各 wheel でテストを実行するため 3.14t は
+#  GIL 無しで検証される。3.13t は cibuildwheel 4.x が対応廃止したため対象外)
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
 build-frontend = "build"
 test-requires = "pytest"
 test-command = "pytest {project}/tests"

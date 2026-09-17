@@ -16,7 +16,11 @@ Official URL of ``cedar``: http://www.tkl.iis.u-tokyo.ac.jp/~ynaga/cedar/
 * A POSIX-compatible 64-bit platform (Linux, macOS)
 * A C++ compiler, when building from source
 
-The extension is tested with CPython 3.9 through 3.14 on Linux and macOS.
+The extension is tested with CPython 3.9 through 3.14 on Linux and macOS,
+including the free-threaded build of 3.14 (``3.14t``). The module is declared
+free-threading compatible, so it imports and works on a free-threaded
+interpreter without a ``ModuleNotFoundError``; concurrency across *distinct*
+trie objects is supported (see [Limitations](#limitations)).
 
 ## Why a double-array trie?
 
@@ -356,6 +360,16 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 ``pycedar.__version__`` exposes the installed package version.
 
 ## Limitations
+
+### Concurrent access is safe only across distinct tries
+
+The module is declared free-threading compatible (PEP 703) and works on
+free-threaded CPython 3.14. That covers using *separate* trie objects from
+several threads at once, which the test suite exercises.
+
+It does not make an individual trie thread-safe: concurrent operations on the
+*same* trie race, exactly as they would under the GIL, and can corrupt it.
+Guard a shared trie with a lock as you would any other mutable object.
 
 ### Values are C ``int`` sized, and two of them are reserved
 

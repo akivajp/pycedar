@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Free-threaded CPython support: the extension declares itself
+  free-threading compatible (PEP 703) via Cython's
+  ``freethreading_compatible`` directive, so it imports and works on a
+  free-threaded interpreter (tested on ``3.14t``). Wheels for ``cp314t`` are
+  built by CI. This covers concurrency across distinct trie objects;
+  concurrent operations on the *same* trie are still not thread-safe.
+
 ## [0.5.0] - 2026-09-18
 
 ### Added

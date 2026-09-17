@@ -11,14 +11,17 @@ Value semantics that stubs cannot express fully:
   must not contain a NUL byte.
 """
 
-from typing import Any, Iterator, overload
-from typing import TypeVar
+from typing import Any, Generic, Iterator, TypeVar, overload
 
 import builtins
 
 __version__: str
 
 _T = TypeVar("_T")
+# Key type of a trie: ``str`` for str_trie/unicode_trie, ``bytes`` for
+# bytes_trie. dict's key type is decided at runtime, so it holds the union.
+# (トライのキー型。dict は実行時に決まるため共用型を当てはめる)
+_KT = TypeVar("_KT")
 
 class node:
     """A cursor into a trie. (トライ内の位置を指すカーソル)"""
@@ -35,7 +38,7 @@ class node:
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
-class base_trie:
+class base_trie(Generic[_KT]):
     """Base class of every trie; use a specialized subclass.
     (全トライの基底クラス。直接使わず特殊化クラスを使う)"""
 
@@ -57,6 +60,23 @@ class base_trie:
     def begin(self, from_id: int = 0, length: int = 0) -> tuple[int, int, int]: ...
     def next(self, node_id: int, length: int, root: int = 0) -> tuple[int, int, int]: ...
 
+    # These dispatch to the specialized subclasses at runtime; they raise
+    # NotImplementedError on a bare base_trie.
+    # (実行時は特殊化クラスへ dispatch される。素の base_trie では
+    #  NotImplementedError)
+    def common_prefix_predict(
+        self, key: _KT, from_id: int = 0, max_size: int = -1,
+    ) -> list[tuple[_KT, int, int]]: ...
+    def common_prefix_search(
+        self, key: _KT, from_id: int = 0, max_size: int = -1,
+    ) -> list[tuple[_KT, int, int]]: ...
+    def erase(self, key: _KT, from_id: int = 0) -> int: ...
+    def exact_match_search(self, key: _KT, from_id: int = 0) -> tuple[int, int, int]: ...
+    def set(self, key: _KT, value: int) -> int: ...
+    def suffix(self, node_id: int, length: int = 0) -> _KT: ...
+    def traverse(self, key: _KT, from_id: int = 0, pos: int = 0) -> tuple[int, int, int]: ...
+    def update(self, key: _KT, delta: int = 0) -> int: ...
+
     def open(self, filepath: str, mode: str = "rb", offset: int = 0, size: int = 0) -> int: ...
     def save(self, filepath: str, mode: str = "wb", shrink: bool = True) -> int: ...
     def dumps(self, shrink: bool = True) -> bytes: ...
@@ -64,7 +84,7 @@ class base_trie:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]: ...
 
-class str_trie(base_trie):
+class str_trie(base_trie[str]):
     def common_prefix_predict(
         self, key: str, from_id: int = 0, max_size: int = -1,
     ) -> list[tuple[str, int, int]]: ...
@@ -78,7 +98,7 @@ class str_trie(base_trie):
     def traverse(self, key: str, from_id: int = 0, pos: int = 0) -> tuple[int, int, int]: ...
     def update(self, key: str, delta: int = 0) -> int: ...
 
-class bytes_trie(base_trie):
+class bytes_trie(base_trie[bytes]):
     def common_prefix_predict(
         self, key: bytes, from_id: int = 0, max_size: int = -1,
     ) -> list[tuple[bytes, int, int]]: ...
@@ -92,7 +112,7 @@ class bytes_trie(base_trie):
     def traverse(self, key: bytes, from_id: int = 0, pos: int = 0) -> tuple[int, int, int]: ...
     def update(self, key: bytes, delta: int = 0) -> int: ...
 
-class unicode_trie(base_trie):
+class unicode_trie(base_trie[str]):
     # On Python 3 this behaves identically to str_trie.
     # (Python 3 では str_trie と同一の挙動。後方互換のために残っている)
     def common_prefix_predict(
@@ -118,7 +138,7 @@ class dict:
      各キーは取りうる2型の共用型になっている)
     """
 
-    trie: base_trie
+    trie: base_trie[str | bytes]
     root: node
     type: builtins.type
 
