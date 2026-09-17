@@ -72,6 +72,16 @@ def collect(args):
         ('dict: d.get_node(key)', 'for k in probe: trie.get_node(k)', len(probe)),
         ('trie: exact_match_search', 'for k in probe: raw.exact_match_search(k)', len(probe)),
         ('trie: common_prefix_predict', 'for p in prefixes: raw.common_prefix_predict(p)', len(prefixes)),
+        # The lazy variants: building the same result through the generator
+        # shows the per-item overhead, and taking only the first hit shows the
+        # early-exit payoff the list versions cannot offer.
+        # (遅延版。ジェネレータ経由で同じ結果を作るコストが1件あたりの
+        #  オーバーヘッド、先頭1件のみの取得は list 版にはない早期打ち切りの
+        #  効果を示す)
+        ('trie: list(ic_prefix_predict)', 'for p in prefixes: list(raw.icommon_prefix_predict(p))', len(prefixes)),
+        ('trie: ic_prefix_predict (first)', 'for p in prefixes: next(raw.icommon_prefix_predict(p))', len(prefixes)),
+        ('trie: list(ic_prefix_search)', 'for k in probe: list(raw.icommon_prefix_search(k))', len(probe)),
+        ('trie: ic_prefix_search (first)', 'for k in probe: next(raw.icommon_prefix_search(k))', len(probe)),
     ]
 
     results = [(name, measure(statement, scope, operations, args.number, args.repeat))

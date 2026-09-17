@@ -859,6 +859,66 @@ def test_icommon_prefix_generators_are_lazy():
         assert list(gen)  # iterable one item at a time (1件ずつ反復できる)
 
 
+def test_icommon_prefix_generators_hold_their_key():
+    """The key is borrowed for the whole iteration: a generator built on a
+    temporary key string (referenced by nothing but the generator frame) must
+    survive explicit GC passes between the yields and still produce exactly
+    what the list version produces. This would crash or corrupt if the
+    implementation ever borrowed the key buffer without keeping the key
+    object alive.
+    (キーは反復全体で借用される: ジェネレータのフレーム以外から参照されていない
+     一時的なキー文字列でジェネレータを作り、yield の合間に明示的に GC を回して
+     も完走し、list 版と同じ結果になること。実装が key オブジェクトを生かした
+     まま借用バッファを使わなくなったら壊れるはずの検査)"""
+    import gc
+
+    for trie_cls in (pycedar.str_trie, pycedar.bytes_trie):
+        trie = trie_cls()
+        cast = (lambda s: s.encode('utf-8')) if trie_cls is pycedar.bytes_trie \
+            else (lambda s: s)
+        for i in range(100):
+            trie.set(cast('g%03d' % i), i)
+
+        # The probe factory builds a fresh temporary on every call: once it is
+        # passed into the generator call, nothing but the generator frame
+        # references it, so the frame must be the one keeping the borrowed
+        # buffer valid across these gc.collect() calls.
+        # (probe 工場は呼び出しごとに一時オブジェクトを作る。ジェネレータに渡した
+        #  後はフレームしか参照しておらず、gc.collect() を挟んでも借用バッファが
+        #  有効であり続けることが求められる)
+        mk = (lambda: b''.join([b'g', b'0'])) if trie_cls is pycedar.bytes_trie \
+            else (lambda: ''.join(['g', '0']))
+        # Bound cdef methods are recreated on each attribute access, so the
+        # lazy/eager pairs are listed explicitly rather than compared by
+        # identity.
+        # (Cython のバウンドメソッドはアクセスのたびに新規オブジェクトになるため、
+        #  遅延/即時の組は同一性比較ではなく明示的に対応させる)
+        for lazy, eager in (
+            (trie.icommon_prefix_search, trie.common_prefix_search),
+            (trie.icommon_prefix_predict, trie.common_prefix_predict),
+        ):
+            gen = lazy(mk())
+            out = []
+            for step, item in enumerate(gen):
+                # An explicit GC pass between yields; every 10th item is
+                # enough to exercise reuse of a freed key.
+                # (yield の合間に明示的な GC を回す。10件に1回で十分)
+                if step % 10 == 0:
+                    gc.collect()
+                out.append(item)
+            assert out == eager(mk())
+
+        # Partial iteration then dropping the generator leaves the trie valid.
+        # (途中でジェネレータを放棄してもトライは健全なまま)
+        gen = trie.icommon_prefix_predict(cast('g'))
+        next(gen)
+        del gen
+        gc.collect()
+        assert trie.num_keys() == 100
+        assert list(trie.icommon_prefix_predict(cast('g'))) == \
+            trie.common_prefix_predict(cast('g'))
+
+
 def test_loads_accepts_bytes_like_and_rejects_others():
     """loads() takes any bytes-like image and keeps its contents when the
     image is rejected; non-buffer types raise TypeError.
