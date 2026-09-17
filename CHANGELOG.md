@@ -5,7 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-18
+
+### Added
+
+- ``dict``-like ``pop()`` and ``popitem()`` on ``pycedar.dict``. ``pop()``
+  behaves like ``dict.pop``; ``popitem()`` removes and returns the first pair
+  in the trie's enumeration order, which is sorted-key order — a trie keeps no
+  insertion order, so unlike ``dict.popitem`` it does not return the most
+  recently inserted item.
+- In-memory serialization: ``dumps()`` returns the trie image as ``bytes`` and
+  ``loads()`` replaces the trie with one. The layout is byte-for-byte what
+  ``save()`` writes to a file, so the two forms are interchangeable. Unlike a
+  failed ``load()``, ``loads()`` rejects a malformed image before touching the
+  current contents, so the trie keeps them.
+- ``pickle`` support for ``pycedar.dict`` and the trie classes, serializing
+  through the same image; ``copy.copy()`` and ``copy.deepcopy()`` work the same
+  way. As with ``save()``/``load()``, images are platform-dependent and carry
+  no integrity checks.
+- Type stubs, shipped as the PEP 561 stub-only package ``pycedar-stubs``, so
+  type checkers and IDEs pick the API up without extra configuration.
 
 ## [0.4.0] - 2026-09-17
 
@@ -265,7 +284,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/akivajp/pycedar/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/akivajp/pycedar/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/akivajp/pycedar/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/akivajp/pycedar/compare/v0.2.2...v0.3.0
