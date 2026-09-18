@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- ARM64 Windows wheels: the release workflow builds ``win_arm64`` wheels on
+  the native ``windows-11-arm`` runner for CPython 3.11 through 3.14
+  (free-threaded 3.14t is not yet included pending its ARM64 availability),
+  and the test workflow validates the MSVC ARM64 build on that runner.
+
 ### Changed
 
 - Point lookups on ``pycedar.dict`` (``get``, ``setdefault``, ``pop``,

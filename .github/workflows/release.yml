@@ -73,9 +73,32 @@ jobs:
         #  windows-latest は x86_64 で、MSVC ビルドは tests ワークフローが
         #  push のたびに検証する)
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            cibw-archs: "x86_64 arm64"
+          - os: windows-latest
+            cibw-archs: "AMD64"
+          # ARM64 Windows wheels build on the native arm64 runner. CPython
+          # publishes ARM64 Windows interpreters for 3.11+, so older versions
+          # are left out; the free-threaded 3.14t wheel joins once its ARM64
+          # availability is confirmed.
+          # (ARM64 Windows の wheel はネイティブ arm64 ランナーでビルドする。
+          #  CPython の Windows ARM64 インタプリタは 3.11 以降のみ提供のため
+          #  それより前は対象外。フリースレッドの 3.14t は ARM64 向けの提供
+          #  が確認でき次第追加する)
+          - os: windows-11-arm
+            cibw-build: "cp311-* cp312-* cp313-* cp314-*"
+            cibw-archs: "ARM64"
     steps:
       - uses: actions/checkout@v7
       - uses: pypa/cibuildwheel@v4.2.1
+        env:
+          # Per-runner arch/build selection; AUTO64 resolves to the runner's
+          # own architecture (x86_64 or aarch64).
+          # (ランナーごとのアーキとビルド選択。AUTO64 はランナー自身の
+          #  アーキテクチャに解決される)
+          CIBW_ARCHS: ${{ matrix.cibw-archs || 'AUTO64' }}
+          CIBW_BUILD: ${{ matrix.cibw-build || 'cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*' }}
       - uses: actions/upload-artifact@v7
         with:
           name: dist-wheels-${{ matrix.os }}

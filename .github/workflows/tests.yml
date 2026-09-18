@@ -18,6 +18,10 @@ jobs:
         # under MSVC; wheels for it are produced by the release workflow.
         # (windows-latest は vendored cedar の C++ ソースが MSVC でビルド
         #  できることを検証する。wheel は release ワークフローが生成する)
+        # windows-11-arm additionally validates the MSVC ARM64 build on the
+        # native runner; CPython ships ARM64 Windows builds for 3.11+ only.
+        # (windows-11-arm は MSVC ARM64 ビルドをネイティブランナーで検証する。
+        #  CPython の Windows ARM64 版は 3.11 以降のみ提供)
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
         exclude:
@@ -35,6 +39,12 @@ jobs:
             python-version: "3.14t"
           - os: macos-latest
             python-version: "3.14t"
+          # One job per extra platform is enough to validate the toolchain:
+          # MSVC ARM64 compilation is the risk, not the Python version.
+          # (追加プラットフォームは 1 ジョブで十分。検証対象は Python の
+          #  バージョンではなく MSVC ARM64 コンパイルそのもの)
+          - os: windows-11-arm
+            python-version: "3.13"
 
     steps:
       - uses: actions/checkout@v7

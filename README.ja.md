@@ -17,7 +17,9 @@ The English README is available at [README.md](README.md).
 * ソースからビルドする場合は C++ コンパイラ（wheel では不要）
 
 Linux、macOS、Windows 上の CPython 3.9 〜 3.14 で動作を検証しています。Python
-3.14 のフリースレッド版（``3.14t``）も含みます。モジュールはフリースレッド
+3.14 のフリースレッド版（``3.14t``）も含みます。wheel は Linux (x86_64,
+aarch64)、macOS (x86_64, arm64)、Windows (AMD64, ARM64) 向けに提供します。
+モジュールはフリースレッド
 対応を宣言しているため、フリースレッドインタプリタ上で ``ModuleNotFoundError``
 にならずに動作します。*別々の* トライオブジェクトを複数スレッドから使う並行
 アクセスはサポート対象です（[制約事項](#制約事項) 参照）。
