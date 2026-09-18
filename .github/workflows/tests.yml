@@ -89,3 +89,20 @@ jobs:
           "${py}" -m pip install dist/*.tar.gz
           cd "${RUNNER_TEMP}"
           "${py}" -c "import pycedar; assert pycedar.dict() is not None"
+
+  stub-types:
+    name: Type-check the stubs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      # The stubs are checked without building the extension: mypy resolves
+      # the module through the PEP 561 stub-only package (pycedar-stubs/).
+      # (拡張をビルドせずにスタブを検査する。mypy は PEP 561 の
+      #  stub-only パッケージ (pycedar-stubs/) 経由でモジュールを解決する)
+      - name: Run mypy on the type-level sample
+        run: |
+          python -m pip install mypy
+          MYPYPATH=. mypy tests/stub_typecheck.py
