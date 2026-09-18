@@ -68,8 +68,6 @@ $ pip install --user https://github.com/akivajp/pycedar/archive/master.zip
 
 Type stubs ship as the ``pycedar-stubs`` package (PEP 561). Type checkers and
 IDEs pick them up automatically once pycedar is installed — no extra step.
-(型スタブは ``pycedar-stubs`` パッケージとして同梱されるため、インストール後は
- 型検査器や IDE が自動で API を認識する)
 
 ## Usage
 
@@ -279,12 +277,6 @@ the first hit of a 2-character predict costs roughly a tenth of the full list
 (332 ns against 2892 ns per prefix), while draining the whole generator costs
 about 10% more than the list version; the search variants, whose results are
 capped at one per key byte, are cheap either way.
-(遅延版は list 版と同じ組を同じ順で返す。反復中のトライ変更時の結果は保証されない。
- 早期に打ち切るほど遅延版が有利になる。上の表と同じ 20000 キーで
- ``benchmarks/bench.py`` により計測した結果、2 文字の predict で先頭 1 件のみの
- 取得は全件 list 化の約 1/10 (プレフィックスあたり 332 ns に対し 2892 ns)、
- ジェネレータを最後まで消費すると list 版より約 1 割遅い。search の結果は
- キー1バイトあたり最大1件のためどちらでも安価)
 
 Enumerating a trie (or a subtree) uses ``begin`` / ``next``:
 
@@ -467,8 +459,6 @@ source.
 The same applies to ``dumps()`` / ``loads()``, which use the identical layout,
 and to ``pickle`` — pickling serializes this image, so pickles are only
 portable between machines of the same platform and integrity is not verified.
-(シリアライズはプラットフォーム依存かつ改竄検査なし。``dumps()``/``loads()`` や
- ``pickle`` も同一レイアウトを使用するため同様)
 
 ### I/O failures are reported through return codes
 
