@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the native ``windows-11-arm`` runner for CPython 3.11 through 3.14
   (free-threaded 3.14t is not yet included pending its ARM64 availability),
   and the test workflow validates the MSVC ARM64 build on that runner.
+- Generic ``pycedar.dict`` stubs: the stub-only package now parameterizes
+  ``pycedar.dict`` on its key type, so a checker infers ``dict[str]`` from
+  ``pycedar.dict()`` and ``dict[bytes]`` from ``pycedar.dict(bytes)``, and
+  every key position narrows from the ``str | bytes`` union. The class is
+  not subscriptable at runtime.
 
 ### Changed
 
