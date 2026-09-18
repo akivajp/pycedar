@@ -1,0 +1,9 @@
+# Dependabot: keep the GitHub Actions versions current. CI とリリースの
+# ワークフローで参照するアクション (checkout, setup-python, cibuildwheel,
+# upload-artifact など) を週次で確認し、新しいバージョンが出たら PR を出す。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
