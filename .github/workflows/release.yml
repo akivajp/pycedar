@@ -93,11 +93,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: pypa/cibuildwheel@v4.2.1
         env:
-          # Per-runner arch/build selection; AUTO64 resolves to the runner's
+          # Per-runner arch/build selection; auto64 resolves to the runner's
           # own architecture (x86_64 or aarch64).
-          # (ランナーごとのアーキとビルド選択。AUTO64 はランナー自身の
+          # (ランナーごとのアーキとビルド選択。auto64 はランナー自身の
           #  アーキテクチャに解決される)
-          CIBW_ARCHS: ${{ matrix.cibw-archs || 'AUTO64' }}
+          CIBW_ARCHS: ${{ matrix.cibw-archs || 'auto64' }}
           CIBW_BUILD: ${{ matrix.cibw-build || 'cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*' }}
       - uses: actions/upload-artifact@v7
         with:
