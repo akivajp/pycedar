@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-18
+
 ### Added
 
 - ARM64 Windows wheels: the release workflow builds ``win_arm64`` wheels on
@@ -26,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ``(value, length, node_id)`` search result; they read the value through the
   ``exactMatchSearch<int>`` specialization instead, which is slightly faster
   (about 3 ns on ``key in d`` in the project benchmarks) and allocates less.
+- The stubs are pinned in CI by a mypy job over ``tests/stub_typecheck.py``.
 
 ### Fixed
 
@@ -334,7 +337,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/akivajp/pycedar/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/akivajp/pycedar/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/akivajp/pycedar/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/akivajp/pycedar/compare/v0.3.1...v0.4.0
