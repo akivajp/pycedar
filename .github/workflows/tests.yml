@@ -23,7 +23,7 @@ jobs:
         # (windows-11-arm は MSVC ARM64 ビルドをネイティブランナーで検証する。
         #  CPython の Windows ARM64 版は 3.11 以降のみ提供)
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
         exclude:
           # setup-python does not ship CPython 3.9 for the Apple silicon
           # runners; the Linux matrix covers that version.
@@ -32,13 +32,17 @@ jobs:
             python-version: "3.9"
         include:
           # The extension is declared free-threading compatible; validate it
-          # without the GIL too. cibuildwheel 4.x dropped 3.13t, so only 3.14t.
+          # without the GIL too, on the newest free-threaded release. The
+          # 3.14t wheels are still tested by cibuildwheel in the release
+          # workflow. cibuildwheel 4.x dropped 3.13t.
           # (拡張はフリースレッド対応を宣言しているため GIL 無しでも検証する。
-          #  cibuildwheel 4.x が 3.13t を廃止したため 3.14t のみ)
+          #  最新のフリースレッド版で検証し、3.14t の wheel は release
+          #  ワークフローの cibuildwheel がテストする。3.13t は cibuildwheel 4.x
+          #  が対応廃止)
           - os: ubuntu-latest
-            python-version: "3.14t"
+            python-version: "3.15t"
           - os: macos-latest
-            python-version: "3.14t"
+            python-version: "3.15t"
           # One job per extra platform is enough to validate the toolchain:
           # MSVC ARM64 compilation is the risk, not the Python version.
           # (追加プラットフォームは 1 ジョブで十分。検証対象は Python の

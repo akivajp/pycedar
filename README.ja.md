@@ -16,8 +16,8 @@ The English README is available at [README.md](README.md).
 * 64bit プラットフォーム（Windows または POSIX 互換の Linux/macOS）
 * ソースからビルドする場合は C++ コンパイラ（wheel では不要）
 
-Linux、macOS、Windows 上の CPython 3.9 〜 3.14 で動作を検証しています。Python
-3.14 のフリースレッド版（``3.14t``）も含みます。wheel は Linux (x86_64,
+Linux、macOS、Windows 上の CPython 3.9 〜 3.15 で動作を検証しています。Python
+3.14 / 3.15 のフリースレッド版（``3.14t``、``3.15t``）も含みます。wheel は Linux (x86_64,
 aarch64)、macOS (x86_64, arm64)、Windows (AMD64, ARM64) 向けに提供します。
 モジュールはフリースレッド
 対応を宣言しているため、フリースレッドインタプリタ上で ``ModuleNotFoundError``
@@ -380,7 +380,7 @@ applet 2
 ### 並行アクセスが安全なのは別々のトライの間のみ
 
 モジュールはフリースレッド互換（PEP 703）を宣言しており、フリースレッド版の
-CPython 3.14 で動作します。これは *別々の* トライオブジェクトを複数スレッド
+CPython 3.14 / 3.15 で動作します。これは *別々の* トライオブジェクトを複数スレッド
 から同時に使うことをカバーしており、テストスイートでも検証しています。
 
 一方で、個々のトライがスレッドセーフになったわけではありません。*同一の*

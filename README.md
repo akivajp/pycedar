@@ -16,8 +16,9 @@ Official URL of ``cedar``: http://www.tkl.iis.u-tokyo.ac.jp/~ynaga/cedar/
 * A 64-bit platform: Windows, or a POSIX-compatible one (Linux, macOS)
 * A C++ compiler, when building from source (wheels need none)
 
-The extension is tested with CPython 3.9 through 3.14 on Linux, macOS and
-Windows, including the free-threaded build of 3.14 (``3.14t``). Wheels cover
+The extension is tested with CPython 3.9 through 3.15 on Linux, macOS and
+Windows, including the free-threaded builds of 3.14 and 3.15 (``3.14t``,
+``3.15t``). Wheels cover
 Linux (x86_64, aarch64), macOS (x86_64, arm64) and Windows (AMD64, ARM64).
 The module is
 declared free-threading compatible, so it imports and works on a free-threaded
@@ -387,7 +388,7 @@ A ``dict``-like façade over a trie. ``pycedar.dict(key_type)`` accepts ``str``
 ### Concurrent access is safe only across distinct tries
 
 The module is declared free-threading compatible (PEP 703) and works on
-free-threaded CPython 3.14. That covers using *separate* trie objects from
+free-threaded CPython 3.14 and 3.15. That covers using *separate* trie objects from
 several threads at once, which the test suite exercises.
 
 It does not make an individual trie thread-safe: concurrent operations on the
