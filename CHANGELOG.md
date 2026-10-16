@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-16
+
+### Added
+
+- Python 3.15 support: wheels for CPython 3.15 and its free-threaded build
+  (``cp315``, ``cp315t``) on every platform, including Windows ARM64. 3.15 joins
+  the test matrix and the classifiers.
+
+### Changed
+
+- The per-push free-threading jobs run on ``3.15t`` instead of ``3.14t``; the
+  ``3.14t`` wheels are still tested by cibuildwheel in the release workflow.
+
 ## [0.6.2] - 2026-10-16
 
 ### Added
@@ -352,7 +365,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/akivajp/pycedar/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/akivajp/pycedar/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/akivajp/pycedar/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/akivajp/pycedar/compare/v0.5.0...v0.6.0
