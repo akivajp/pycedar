@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-16
+
+### Added
+
+- The ``Programming Language :: Python :: Free Threading`` classifier, so the
+  ``cp314t`` wheels that ship with every release show up under PyPI's
+  free-threading filter.
+
+### Changed
+
+- The release wheels are built with cibuildwheel 4.3.1 (was 4.2.1). The set of
+  target interpreters is unchanged; the extension code is identical to 0.6.1.
+- ``README.md`` no longer carries stray Japanese notes; the Japanese
+  documentation lives in ``README.ja.md``.
+
 ## [0.6.1] - 2026-09-18
 
 ### Added
@@ -337,7 +352,8 @@ records; the corresponding tags were added retroactively.
 
 - Build failure with clang on macOS.
 
-[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/akivajp/pycedar/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/akivajp/pycedar/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/akivajp/pycedar/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/akivajp/pycedar/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/akivajp/pycedar/compare/v0.4.0...v0.5.0
