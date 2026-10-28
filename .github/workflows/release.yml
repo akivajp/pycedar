@@ -91,7 +91,7 @@ jobs:
             cibw-archs: "ARM64"
     steps:
       - uses: actions/checkout@v7
-      - uses: pypa/cibuildwheel@v4.3.1
+      - uses: pypa/cibuildwheel@v4.3.4
         env:
           # Per-runner arch/build selection; auto64 resolves to the runner's
           # own architecture (x86_64 or aarch64).
